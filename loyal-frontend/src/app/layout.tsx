@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SiteHeader } from "@/components/SiteHeader";
 
 export const metadata: Metadata = {
   title: "LOYAL — loyalty is something you earn every day",
@@ -21,7 +22,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="ground" aria-hidden="true" />
         <div className="scan" aria-hidden="true" />
         <div className="sweepline animate-sweep" aria-hidden="true" />
-        <div className="relative z-10">{children}</div>
+        <div className="relative z-10">
+          <SiteHeader />
+          {children}
+        </div>
       </body>
     </html>
   );

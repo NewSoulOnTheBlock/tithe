@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
-import { useState } from "react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { useChain } from "@/lib/useChain";
 import { Definition } from "@/components/Definition";
 import { Live } from "@/components/Live";
-import { Stake } from "@/components/Stake";
 import { Button } from "@/components/ui/button";
 import { LOYAL, EXPLORER, LOYAL_TAX_BPS_FALLBACK, explorerAddr } from "@/lib/chain";
 import { bpsToPct } from "@/lib/format";
@@ -23,46 +23,47 @@ import { bpsToPct } from "@/lib/format";
  * decided to care and was in the way of the one who has not.
  */
 export default function Page() {
-  // The staking form turns itself on when the vault appears on chain. Held
-  // here rather than in `Stake` so one read serves both panels.
-  const [vaultLive, setVaultLive] = useState(false);
-
   /**
-   * The tax rate, lifted from the same read the panel below uses.
+   * One read, shared by every section.
    *
-   * It was hardcoded at first, and wrongly: the prose said 4% while the live
-   * readout on the same screen said 2%. Two numbers for one fact, both visible
-   * at once. Reading it once and passing it down means the page can only be
-   * wrong in one place, and only when the chain is unreachable.
+   * Two pollers meant two sources for the same figure, briefly disagreeing
+   * after each refresh — and the tax rate was hardcoded on top of that, so the
+   * prose said 4% while the live readout on the same screen said 2%. Reading
+   * once and passing down means the page can only be wrong in one place, and
+   * only when the chain is unreachable.
    */
-  const [taxBps, setTaxBps] = useState<number | null>(null);
-  const tax = taxBps ?? LOYAL_TAX_BPS_FALLBACK;
+  const { snap, error } = useChain();
+
+  const tax = snap?.curve.taxBps != null ? Number(snap.curve.taxBps) : LOYAL_TAX_BPS_FALLBACK;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 pb-28 pt-8 sm:px-8">
-      <nav className="mb-12 flex items-center justify-between">
-        <a href="#top" className="flex items-center gap-3">
-          <Image src="/logo.webp" alt="" width={32} height={32} className="animate-drift" priority />
-          <span className="text-sm font-bold tracking-[0.3em] text-bone">LOYAL</span>
-        </a>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <a href="#live">On chain</a>
-          </Button>
-          <Button asChild size="sm" variant="solid">
-            <a href="#stake">Stake</a>
-          </Button>
-        </div>
-      </nav>
-
+    <main className="mx-auto w-full max-w-5xl px-5 pb-28 pt-12 sm:px-8">
       <div id="top" className="space-y-20">
-        <Definition tax={tax} />
+        <Definition tax={tax} snap={snap} />
 
-        {/* The offer, immediately. Everything else on this page is evidence for
-            it, and evidence goes after the claim. */}
-        <Stake live={vaultLive} tax={tax} />
+        {/*
+          The route to the offer.
 
-        <Live onLive={setVaultLive} onTax={setTaxBps} />
+          Staking moved to its own page, which left the home page making a case
+          and giving nobody anywhere to take it. This is that door, and it says
+          the terms on it — a reader should know what they are walking into
+          before they click, not after.
+        */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+          <Button asChild size="lg" variant="solid">
+            <Link href="/stake">
+              Stake LOYAL
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </Button>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-ash">
+            <span className="text-bone">0.5×</span> no lock ·{" "}
+            <span className="text-bone">1×</span> a day ·{" "}
+            <span className="neon-magenta">3×</span> a week
+          </p>
+        </div>
+
+        <Live snap={snap} error={error} />
 
         {/* ---- the small print, as lines rather than paragraphs ---- */}
         <section>

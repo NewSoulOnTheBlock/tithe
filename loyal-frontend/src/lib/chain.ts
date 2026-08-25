@@ -147,5 +147,11 @@ export const TIERS: {
 
 export const tierByIndex = (i: number) => TIERS.find((t) => t.index === i) ?? TIERS[0];
 
+/** Where the community actually is. */
+export const SOCIALS = {
+  telegram: "https://t.me/LoyalRobinhood",
+  x: "https://x.com/LoyalRobinhood",
+} as const;
+
 export const explorerAddr = (a: string) => `${EXPLORER}/address/${a}`;
 export const explorerTx = (h: string) => `${EXPLORER}/tx/${h}`;

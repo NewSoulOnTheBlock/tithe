@@ -18,7 +18,7 @@ pragma solidity 0.8.24;
  *     LP/CLM share prices are manipulable within a block (spec §6.3), so the
  *     Redeemer applies the lag — not the adapter.
  *  3. `realizeSurplus()` MUST only return value above a principal high-water
- *     mark it maintains itself (spec §9). Beefy auto-compounds, so there is no
+ *     mark it maintains itself (spec §9). a yield venue auto-compounds, so there is no
  *     harvest; unrealized appreciation must stay in the corpus and raise the
  *     floor rather than being paid to stakers. Impermanent loss below the mark
  *     pays zero — it never funds distribution out of principal.
