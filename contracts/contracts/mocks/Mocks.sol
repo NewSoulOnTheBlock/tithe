@@ -2,12 +2,12 @@
 pragma solidity 0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IYieldAdapter} from "../interfaces/IYieldAdapter.sol";
 
-/// @dev Stands in for the Pons-deployed AGORA: plain, fixed-supply, burnable.
-contract MockAgora is ERC20 {
-    constructor(uint256 supply) ERC20("Agora", "AGORA") {
+/// @dev Stands in for the Pons-deployed LOYAL: plain, fixed-supply, burnable.
+contract MockLoyal is ERC20 {
+    constructor(uint256 supply) ERC20("Loyal", "LOYAL") {
         _mint(msg.sender, supply);
     }
 
@@ -143,17 +143,6 @@ contract MockCurve {
 }
 
 /// @dev Stands in for the Suits SeaDrop ERC-721: fixed supply, NOT enumerable.
-contract MockSuits is ERC721 {
-    constructor() ERC721("Suits", "SUITS") {}
-
-    function mint(address to, uint256 id) external {
-        _mint(to, id);
-    }
-
-    function mintMany(address to, uint256 from, uint256 count) external {
-        for (uint256 i; i < count; ++i) _mint(to, from + i);
-    }
-}
 
 /// @dev Forwards ETH using `transfer()`, i.e. with only a 2300-gas stipend.
 contract StipendSender {
@@ -183,5 +172,62 @@ contract RevertingAdapter is IYieldAdapter {
 
     function principal() external pure returns (uint256) {
         revert("adapter down");
+    }
+}
+
+
+/**
+ * Tries to re-enter `claim()` from the ETH callback.
+ *
+ * The vault sends with `.call`, which forwards all gas, so `nonReentrant` is
+ * the only thing standing between this and draining the reward pool.
+ */
+interface IStakedLoyal {
+    function claim() external returns (uint256);
+    function deposit(uint256 assets, address receiver) external returns (uint256);
+}
+
+contract ReentrantClaimer {
+    IStakedLoyal public immutable vault;
+    uint256 public reenteredTimes;
+    bool private attacking;
+
+    constructor(address vault_) {
+        vault = IStakedLoyal(vault_);
+    }
+
+    function stake(address token, uint256 amount) external {
+        IERC20(token).approve(address(vault), type(uint256).max);
+        vault.deposit(amount, address(this));
+    }
+
+    function attack() external {
+        attacking = true;
+        vault.claim();
+        attacking = false;
+    }
+
+    receive() external payable {
+        if (!attacking) return;
+        // One re-entry attempt is enough to prove the guard holds; swallowing
+        // the revert keeps the outer claim succeeding so the test can assert on
+        // the amount actually paid rather than on a bubbled failure.
+        try vault.claim() {
+            reenteredTimes++;
+        } catch {}
+    }
+}
+
+
+/// @dev Stands in for an eligibility gate: an allowlist nobody but the test sets.
+contract MockGate {
+    mapping(address => bool) public allowed;
+
+    function allow(address who, bool ok) external {
+        allowed[who] = ok;
+    }
+
+    function check(address account) external view returns (bool) {
+        return allowed[account];
     }
 }

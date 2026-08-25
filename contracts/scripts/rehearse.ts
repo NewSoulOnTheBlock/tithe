@@ -32,16 +32,16 @@ async function main() {
 
   console.log(`  Treasury         ${await treasury.getAddress()}`);
   console.log(`  FeeSink          ${await feeSink.getAddress()}`);
-  console.log(`  Treasury.agora() ${await treasury.agora()}  (unset)`);
+  console.log(`  Treasury.loyal() ${await treasury.loyal()}  (unset)`);
   console.log(`  nav()            ${ethers.formatEther(await treasury.nav())} ETH — reads work with no token ✓`);
 
   line();
   console.log("STEP 2 — launch with creatorFeeRecipient = FeeSink");
   line();
-  const agora = await (
-    await ethers.getContractFactory("MockAgora")
+  const loyal = await (
+    await ethers.getContractFactory("MockLoyal")
   ).deploy(1_000_000_000n * 10n ** 18n);
-  await agora.waitForDeployment();
+  await loyal.waitForDeployment();
   // The curve names the FeeSink as its deployer — this is what launching with
   // params.creatorFeeRecipient produces on the real factory.
   const curve = await (
@@ -51,7 +51,7 @@ async function main() {
 
   const isSink =
     (await curve.deployer()).toLowerCase() === (await feeSink.getAddress()).toLowerCase();
-  console.log(`  token            ${await agora.getAddress()}`);
+  console.log(`  token            ${await loyal.getAddress()}`);
   console.log(`  curve.deployer() ${await curve.deployer()}`);
   console.log(`  is the FeeSink?  ${isSink ? "YES ✓" : "NO ✗"}`);
   if (!isSink) throw new Error("recipient did not carry through — abort");
@@ -59,9 +59,9 @@ async function main() {
   line();
   console.log("STEP 3 — bind");
   line();
-  await (await treasury.setAgora(await agora.getAddress())).wait();
+  await (await treasury.setLoyal(await loyal.getAddress())).wait();
   await (await feeSink.setCurve(await curve.getAddress())).wait();
-  console.log(`  Treasury.agora() ${await treasury.agora()}`);
+  console.log(`  Treasury.loyal() ${await treasury.loyal()}`);
   console.log(`  FeeSink.curve()  ${await feeSink.curve()}`);
   console.log(
     `  FeeSink.owner()  ${await feeSink.owner()}  ${

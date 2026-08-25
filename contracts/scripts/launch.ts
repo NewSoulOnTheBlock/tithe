@@ -26,8 +26,8 @@ const FACTORY = process.env.PONS_FACTORY ?? "0x7eD598BcEf8bd9Edd8C97A195C6d13f40
 const ETH = "0x0000000000000000000000000000000000000000";
 const ZERO32 = "0x" + "00".repeat(32);
 
-const NAME = process.env.TOKEN_NAME ?? "Agora";
-const SYMBOL = process.env.TOKEN_SYMBOL ?? "AGORA";
+const NAME = process.env.TOKEN_NAME ?? "Loyal";
+const SYMBOL = process.env.TOKEN_SYMBOL ?? "LOYAL";
 const LOGO = process.env.TOKEN_LOGO ?? "";
 const DESCRIPTION = process.env.TOKEN_DESCRIPTION ?? "";
 const TAX_BPS = Number(process.env.CREATOR_TAX_BPS ?? 400);
@@ -42,7 +42,7 @@ async function main() {
   if (!feeSink) throw new Error("FEE_SINK not set — run scripts/deploy.ts first.");
 
   line();
-  console.log("AGORA — step 2/3: launch the token");
+  console.log("LOYAL — step 2/3: launch the token");
   line();
   console.log(`network   ${network.name} (chainId ${net.chainId})`);
   console.log(`launcher  ${deployer.address}`);

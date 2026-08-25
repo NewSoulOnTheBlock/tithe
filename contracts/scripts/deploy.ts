@@ -26,7 +26,7 @@ async function main() {
   const balance = await ethers.provider.getBalance(deployer.address);
 
   line();
-  console.log("AGORA — step 1/3: deploy contracts (token does NOT exist yet)");
+  console.log("LOYAL — step 1/3: deploy contracts (token does NOT exist yet)");
   line();
   console.log(`network   ${network.name}  (chainId ${net.chainId})`);
   console.log(`deployer  ${deployer.address}`);
@@ -84,7 +84,7 @@ async function main() {
   line();
   console.log("post-deploy state (read from chain)");
   line();
-  console.log(`Treasury.agora()     ${await treasury.agora()}   <- ZERO until step 3`);
+  console.log(`Treasury.loyal()     ${await treasury.loyal()}   <- ZERO until step 3`);
   console.log(`Treasury.feeSink()   ${await treasury.feeSink()}`);
   console.log(`Treasury.redeemer()  ${await treasury.redeemer()}   <- no ETH can leave`);
   console.log(`Treasury.nav()       ${ethers.formatEther(await treasury.nav())} ETH`);

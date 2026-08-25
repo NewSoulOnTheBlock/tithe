@@ -17,7 +17,7 @@ const {
  * (shell history persists it). `.env` is gitignored at the repo root.
  *
  * Preferred, in order:
- *   1. A hardware wallet, or an encrypted keystore (`cast wallet import agora`)
+ *   1. A hardware wallet, or an encrypted keystore (`cast wallet import loyal`)
  *      with a one-off signing step.
  *   2. A freshly generated deploy-only key funded with just enough gas, kept in
  *      `.env`, and treated as disposable after deployment. Nothing in these

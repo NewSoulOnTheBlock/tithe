@@ -29,7 +29,7 @@ interface IERC20Min {
 
 /**
  * @title FeeSink
- * @notice The address registered as AGORA's `creatorFeeRecipient` **at launch**.
+ * @notice The address registered as LOYAL's `creatorFeeRecipient` **at launch**.
  *
  * ## Why v2 exists
  *
@@ -180,7 +180,7 @@ contract FeeSink {
     /**
      * @notice Forward an ERC-20 balance to the Treasury.
      * @dev Destination is hard-coded, so this grants no discretion. The Treasury
-     *      marks AGORA at zero, so forwarding the token leg parks it out of
+     *      marks LOYAL at zero, so forwarding the token leg parks it out of
      *      circulation rather than inflating NAV.
      */
     function forwardToken(address token) external returns (uint256 amount) {

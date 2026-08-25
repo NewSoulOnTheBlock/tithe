@@ -13,13 +13,13 @@ const SUPPLY = 1_000_000_000n * WAD;
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 const ZERO = ethers.ZeroAddress;
 
-describe("StakedAgora + Redeemer", () => {
+describe("StakedLoyal + Redeemer", () => {
   let owner: HardhatEthersSigner;
   let alice: HardhatEthersSigner;
   let bob: HardhatEthersSigner;
   let carol: HardhatEthersSigner;
 
-  let agora: any, treasury: any, feeSink: any, escrow: any, staking: any, redeemer: any;
+  let loyal: any, treasury: any, feeSink: any, escrow: any, staking: any, redeemer: any;
 
   beforeEach(async () => {
     [owner, alice, bob, carol] = await ethers.getSigners();
@@ -32,35 +32,35 @@ describe("StakedAgora + Redeemer", () => {
     ).deploy(await treasury.getAddress(), await escrow.getAddress(), owner.address);
     await treasury.setFeeSink(await feeSink.getAddress());
 
-    agora = await (await ethers.getContractFactory("MockAgora")).deploy(SUPPLY);
-    await treasury.setAgora(await agora.getAddress());
+    loyal = await (await ethers.getContractFactory("MockLoyal")).deploy(SUPPLY);
+    await treasury.setLoyal(await loyal.getAddress());
 
     staking = await (
-      await ethers.getContractFactory("StakedAgora")
-    ).deploy(await agora.getAddress(), owner.address);
+      await ethers.getContractFactory("StakedLoyal")
+    ).deploy(await loyal.getAddress(), owner.address);
 
     redeemer = await (
       await ethers.getContractFactory("Redeemer")
-    ).deploy(await agora.getAddress(), await treasury.getAddress(), owner.address);
+    ).deploy(await loyal.getAddress(), await treasury.getAddress(), owner.address);
     await treasury.setRedeemer(await redeemer.getAddress());
 
     // Fund the corpus and hand out tokens.
     await treasury.connect(carol).fund({ value: ethers.parseEther("1000") });
-    await agora.transfer(alice.address, 100_000_000n * WAD); // 10%
-    await agora.transfer(bob.address, 100_000_000n * WAD); // 10%
+    await loyal.transfer(alice.address, 100_000_000n * WAD); // 10%
+    await loyal.transfer(bob.address, 100_000_000n * WAD); // 10%
   });
 
   // =========================================================================
-  describe("StakedAgora — ERC-4626 shape", () => {
+  describe("StakedLoyal — ERC-4626 shape", () => {
     it("names itself off the underlying", async () => {
-      expect(await staking.name()).to.equal("Staked Agora");
-      expect(await staking.symbol()).to.equal("stAGORA");
-      expect(await staking.asset()).to.equal(await agora.getAddress());
+      expect(await staking.name()).to.equal("Staked Loyal");
+      expect(await staking.symbol()).to.equal("stLOYAL");
+      expect(await staking.asset()).to.equal(await loyal.getAddress());
     });
 
     it("mints shares 1:1 because ETH rewards stay out of totalAssets", async () => {
       const amt = 1000n * WAD;
-      await agora.connect(alice).approve(await staking.getAddress(), amt);
+      await loyal.connect(alice).approve(await staking.getAddress(), amt);
       await staking.connect(alice).deposit(amt, alice.address);
 
       expect(await staking.totalAssets()).to.equal(amt);
@@ -69,31 +69,31 @@ describe("StakedAgora + Redeemer", () => {
 
     it("does NOT inflate share price when rewards arrive", async () => {
       const amt = 1000n * WAD;
-      await agora.connect(alice).approve(await staking.getAddress(), amt);
+      await loyal.connect(alice).approve(await staking.getAddress(), amt);
       await staking.connect(alice).deposit(amt, alice.address);
 
       const before = await staking.convertToAssets(WAD);
       await staking.notifyReward({ value: ethers.parseEther("10") });
 
-      // Share price must be unchanged — the vault holds no extra AGORA.
+      // Share price must be unchanged — the vault holds no extra LOYAL.
       expect(await staking.convertToAssets(WAD)).to.equal(before);
       expect(await staking.totalAssets()).to.equal(amt);
     });
 
     it("lets stakers withdraw their principal", async () => {
       const amt = 1000n * WAD;
-      await agora.connect(alice).approve(await staking.getAddress(), amt);
+      await loyal.connect(alice).approve(await staking.getAddress(), amt);
       await staking.connect(alice).deposit(amt, alice.address);
       await staking.connect(alice).redeem(await staking.balanceOf(alice.address), alice.address, alice.address);
-      expect(await agora.balanceOf(alice.address)).to.equal(100_000_000n * WAD);
+      expect(await loyal.balanceOf(alice.address)).to.equal(100_000_000n * WAD);
     });
   });
 
   // =========================================================================
-  describe("StakedAgora — reward accounting", () => {
+  describe("StakedLoyal — reward accounting", () => {
     beforeEach(async () => {
       for (const who of [alice, bob]) {
-        await agora.connect(who).approve(await staking.getAddress(), 1000n * WAD);
+        await loyal.connect(who).approve(await staking.getAddress(), 1000n * WAD);
       }
     });
 
@@ -193,19 +193,19 @@ describe("StakedAgora + Redeemer", () => {
     });
 
     it("burns on request, so supply drops immediately", async () => {
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       const supplyBefore = await treasury.eligibleSupply();
 
       await redeemer.connect(alice).requestRedeem(stake);
 
       expect(await treasury.eligibleSupply()).to.equal(supplyBefore - stake);
       expect(await redeemer.totalBurned()).to.equal(stake);
-      expect(await agora.balanceOf(alice.address)).to.equal(0n);
+      expect(await loyal.balanceOf(alice.address)).to.equal(0n);
     });
 
     it("raises the floor for everyone else the moment tokens burn", async () => {
       const floorBefore = await treasury.floorPerToken();
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
 
       expect(await treasury.floorPerToken()).to.be.greaterThan(floorBefore);
@@ -213,7 +213,7 @@ describe("StakedAgora + Redeemer", () => {
 
     it("snapshots BEFORE the burn, so a redeemer cannot be paid at the floor they created", async () => {
       const floorBefore = await treasury.floorPerToken();
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
 
       const r = await redeemer.requests(0);
@@ -223,13 +223,13 @@ describe("StakedAgora + Redeemer", () => {
     });
 
     it("refuses to execute before the delay", async () => {
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       await expect(redeemer.execute(0)).to.be.revertedWithCustomError(redeemer, "TooEarly");
     });
 
     it("pays out after the delay, at the snapshot floor minus the haircut", async () => {
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       await time.increase(24 * 3600 + 1);
 
@@ -244,7 +244,7 @@ describe("StakedAgora + Redeemer", () => {
 
     it("leaves the haircut in the corpus, making redemption accretive", async () => {
       const floorBefore = await treasury.floorPerToken();
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       await time.increase(24 * 3600 + 1);
       await redeemer.execute(0);
@@ -259,12 +259,12 @@ describe("StakedAgora + Redeemer", () => {
       await redeemer.setEpochPolicy(10_000, 7 * 24 * 3600);
 
       // Give everything to alice and redeem the entire supply.
-      const all = await agora.balanceOf(owner.address);
-      await agora.transfer(alice.address, all);
-      await agora.connect(bob).transfer(alice.address, await agora.balanceOf(bob.address));
-      const total = await agora.balanceOf(alice.address);
+      const all = await loyal.balanceOf(owner.address);
+      await loyal.transfer(alice.address, all);
+      await loyal.connect(bob).transfer(alice.address, await loyal.balanceOf(bob.address));
+      const total = await loyal.balanceOf(alice.address);
 
-      await agora.connect(alice).approve(await redeemer.getAddress(), total);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), total);
       await redeemer.connect(alice).requestRedeem(total);
       await time.increase(24 * 3600 + 1);
       await redeemer.execute(0);
@@ -278,12 +278,12 @@ describe("StakedAgora + Redeemer", () => {
     it("still pays the LAST redeemer once supply reaches zero", async () => {
       await redeemer.setEpochPolicy(10_000, 7 * 24 * 3600);
 
-      const all = await agora.balanceOf(owner.address);
-      await agora.transfer(alice.address, all);
-      await agora.connect(bob).transfer(alice.address, await agora.balanceOf(bob.address));
-      const total = await agora.balanceOf(alice.address);
+      const all = await loyal.balanceOf(owner.address);
+      await loyal.transfer(alice.address, all);
+      await loyal.connect(bob).transfer(alice.address, await loyal.balanceOf(bob.address));
+      const total = await loyal.balanceOf(alice.address);
 
-      await agora.connect(alice).approve(await redeemer.getAddress(), total);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), total);
       await redeemer.connect(alice).requestRedeem(total);
       await time.increase(24 * 3600 + 1);
 
@@ -302,12 +302,12 @@ describe("StakedAgora + Redeemer", () => {
     });
 
     it("pays min(snapshot, current) when NAV falls between request and execute", async () => {
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
 
       // Simulate a NAV drop by redeeming... instead, drain via a second redeem
       // at a moment the corpus shrinks. Simplest: bob redeems and executes first.
-      await agora.connect(bob).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(bob).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(bob).requestRedeem(stake);
       await time.increase(24 * 3600 + 1);
       await redeemer.execute(1); // bob paid, NAV drops
@@ -323,7 +323,7 @@ describe("StakedAgora + Redeemer", () => {
     });
 
     it("an operator withdrawal reduces a queued payout but never bricks it", async () => {
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       const [quotedBefore] = await redeemer.preview(0);
 
@@ -345,7 +345,7 @@ describe("StakedAgora + Redeemer", () => {
     });
 
     it("cannot be executed twice", async () => {
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       await time.increase(24 * 3600 + 1);
       await redeemer.execute(0);
@@ -354,7 +354,7 @@ describe("StakedAgora + Redeemer", () => {
 
     it("enforces the per-epoch cap", async () => {
       await redeemer.setEpochPolicy(500, 7 * 24 * 3600); // 5% of NAV per epoch
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       await time.increase(24 * 3600 + 1);
 
@@ -367,7 +367,7 @@ describe("StakedAgora + Redeemer", () => {
 
     it("frees capacity when the epoch rolls", async () => {
       await redeemer.setEpochPolicy(500, 7 * 24 * 3600);
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
       await time.increase(24 * 3600 + 1);
       await expect(redeemer.execute(0)).to.be.reverted;
@@ -378,12 +378,12 @@ describe("StakedAgora + Redeemer", () => {
 
     it("refuses to redeem when there is no floor yet", async () => {
       const bare = await (await ethers.getContractFactory("Treasury")).deploy(owner.address);
-      await bare.setAgora(await agora.getAddress());
+      await bare.setLoyal(await loyal.getAddress());
       const r2 = await (
         await ethers.getContractFactory("Redeemer")
-      ).deploy(await agora.getAddress(), await bare.getAddress(), owner.address);
+      ).deploy(await loyal.getAddress(), await bare.getAddress(), owner.address);
 
-      await agora.connect(alice).approve(await r2.getAddress(), stake);
+      await loyal.connect(alice).approve(await r2.getAddress(), stake);
       await expect((r2.connect(alice) as any).requestRedeem(stake)).to.be.revertedWithCustomError(
         r2,
         "NoFloorYet"
@@ -409,12 +409,12 @@ describe("StakedAgora + Redeemer", () => {
 
     it("pauses NEW requests but never blocks execution of burned tokens", async () => {
       const stake = 100_000_000n * WAD;
-      await agora.connect(alice).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(alice).approve(await redeemer.getAddress(), stake);
       await redeemer.connect(alice).requestRedeem(stake);
 
       await redeemer.setRequestsPaused(true);
 
-      await agora.connect(bob).approve(await redeemer.getAddress(), stake);
+      await loyal.connect(bob).approve(await redeemer.getAddress(), stake);
       await expect(
         redeemer.connect(bob).requestRedeem(stake)
       ).to.be.revertedWithCustomError(redeemer, "Paused");
@@ -451,7 +451,7 @@ describe("StakedAgora + Redeemer", () => {
   describe("end to end: tax in, yield out, floor up", () => {
     it("runs the whole economic loop", async () => {
       // 1. Stakers stake.
-      await agora.connect(alice).approve(await staking.getAddress(), 1000n * WAD);
+      await loyal.connect(alice).approve(await staking.getAddress(), 1000n * WAD);
       await staking.connect(alice).deposit(1000n * WAD, alice.address);
 
       // 2. Trading tax arrives through the FeeSink.
@@ -467,7 +467,7 @@ describe("StakedAgora + Redeemer", () => {
       expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("5"));
 
       // 4. A holder redeems; the floor ratchets up for everyone left.
-      await agora.connect(bob).approve(await redeemer.getAddress(), 50_000_000n * WAD);
+      await loyal.connect(bob).approve(await redeemer.getAddress(), 50_000_000n * WAD);
       await redeemer.connect(bob).requestRedeem(50_000_000n * WAD);
       await time.increase(24 * 3600 + 1);
       await redeemer.execute(0);

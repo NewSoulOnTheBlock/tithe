@@ -24,7 +24,7 @@ async function main() {
   }
 
   line();
-  console.log("AGORA — step 3/3: bind contracts to the launched token");
+  console.log("LOYAL — step 3/3: bind contracts to the launched token");
   line();
   console.log(`network   ${network.name} (chainId ${net.chainId})`);
   console.log(`token     ${TOKEN}`);
@@ -94,12 +94,12 @@ async function main() {
   console.log("BINDING");
   line();
 
-  if ((await treasury.agora()) === ethers.ZeroAddress) {
-    const tx = await treasury.setAgora(TOKEN);
+  if ((await treasury.loyal()) === ethers.ZeroAddress) {
+    const tx = await treasury.setLoyal(TOKEN);
     await tx.wait();
-    console.log(`Treasury.setAgora  ✓ ${tx.hash}`);
+    console.log(`Treasury.setLoyal  ✓ ${tx.hash}`);
   } else {
-    console.log(`Treasury.agora already set: ${await treasury.agora()}`);
+    console.log(`Treasury.loyal already set: ${await treasury.loyal()}`);
   }
 
   if ((await feeSink.curve()) === ethers.ZeroAddress) {
@@ -118,15 +118,15 @@ async function main() {
   const ownerIsSigner = owner.toLowerCase() === signer.address.toLowerCase();
 
   line();
-  console.log("DEPLOYING StakedAgora + Redeemer");
+  console.log("DEPLOYING StakedLoyal + Redeemer");
   line();
 
   const staking = await (
-    await ethers.getContractFactory("StakedAgora")
+    await ethers.getContractFactory("StakedLoyal")
   ).deploy(TOKEN, owner);
   await staking.waitForDeployment();
   const stakingAddr = await staking.getAddress();
-  console.log(`StakedAgora  ${stakingAddr}  (${await staking.symbol()})`);
+  console.log(`StakedLoyal  ${stakingAddr}  (${await staking.symbol()})`);
 
   const redeemer = await (
     await ethers.getContractFactory("Redeemer")
@@ -136,45 +136,16 @@ async function main() {
   console.log(`Redeemer     ${redeemerAddr}`);
   console.log(`  haircut ${await redeemer.haircutBps()} bps · delay ${await redeemer.redeemDelay()}s · epoch cap ${await redeemer.epochCapBps()} bps`);
 
-  // --- Suits NFT staking + the 10/90 yield split ---------------------------
-  const SUITS = process.env.SUITS_NFT?.trim() || "0x3ac7beb099c560f5a09bd822621327d8768f0625";
-  const suitsCode = await ethers.provider.getCode(SUITS);
-  if (suitsCode === "0x") throw new Error(`No contract at SUITS_NFT ${SUITS} on chain ${net.chainId}.`);
-
-  const suitsMeta = new ethers.Contract(
-    SUITS,
-    [
-      "function name() view returns (string)",
-      "function totalSupply() view returns (uint256)",
-      "function getTransferValidator() view returns (address)",
-    ],
-    ethers.provider
-  );
-  console.log(`\nSuits NFT    ${SUITS}`);
-  console.log(`  ${await suitsMeta.name()} · supply ${await suitsMeta.totalSupply()}`);
-  try {
-    const validator = await suitsMeta.getTransferValidator();
-    if (validator !== ethers.ZeroAddress) {
-      console.log(`  ⚠ transfer validator ${validator}`);
-      console.log(`    The Suits owner can tighten transfer policy and block`);
-      console.log(`    unstaking. That risk belongs to the collection, not to us.`);
-    }
-  } catch {}
-
-  const suitsVault = await (
-    await ethers.getContractFactory("StakedSuits")
-  ).deploy(SUITS, owner);
-  await suitsVault.waitForDeployment();
-  const suitsVaultAddr = await suitsVault.getAddress();
-  console.log(`StakedSuits  ${suitsVaultAddr}`);
-
+  // --- income routing ------------------------------------------------------
+  // One sink. The Distributor has no owner and no split: nothing to set,
+  // nothing to pause, and no address that can redirect the income stream.
   const distributor = await (
     await ethers.getContractFactory("Distributor")
-  ).deploy(stakingAddr, suitsVaultAddr, owner);
+  ).deploy(stakingAddr);
   await distributor.waitForDeployment();
   const distributorAddr = await distributor.getAddress();
-  console.log(`Distributor  ${distributorAddr}`);
-  console.log(`  split: ${await distributor.suitsBps()} bps to staked Suits, remainder to stAGORA`);
+  console.log(`\nDistributor  ${distributorAddr}`);
+  console.log(`  routes 100% of income to stLOYAL ${stakingAddr}`);
 
   // The Redeemer is the ONLY address the Treasury will ever pay.
   if (ownerIsSigner) {
@@ -201,23 +172,23 @@ async function main() {
   if (incomeShare === 0n) {
     console.log("  → 0 means NO tax is routed to stakers (the specified behaviour:");
     console.log("    tax is corpus, only realized yield is income). With no yield");
-    console.log("    adapter deployed there is no yield, so stakers and staked");
-    console.log("    Suits will earn NOTHING until either an adapter ships or you");
+    console.log("    adapter deployed there is no yield, so stakers will earn");
+    console.log("    NOTHING until either an adapter ships or you");
     console.log("    call setIncomeShareBps(). That is an economic decision, so it");
     console.log("    is left off by default.");
   }
 
-  // Staked AGORA is CUSTODIED, not owned — it must stay in eligibleSupply so
+  // Staked LOYAL is CUSTODIED, not owned — it must stay in eligibleSupply so
   // stakers keep their floor backing. Deliberately NOT added to the exclusions.
-  console.log(`\nnote: StakedAgora is intentionally NOT added to Treasury exclusions —`);
-  console.log(`      it custodies user AGORA rather than owning it, so stakers`);
+  console.log(`\nnote: StakedLoyal is intentionally NOT added to Treasury exclusions —`);
+  console.log(`      it custodies user LOYAL rather than owning it, so stakers`);
   console.log(`      must keep their floor backing.`);
 
   // ---------------------------------------------------------------------
   line();
   console.log("FINAL STATE");
   line();
-  console.log(`Treasury.agora()      ${await treasury.agora()}`);
+  console.log(`Treasury.loyal()      ${await treasury.loyal()}`);
   console.log(`Treasury.feeSink()    ${await treasury.feeSink()}`);
   console.log(`Treasury.redeemer()   ${await treasury.redeemer()}  (no ETH can leave yet)`);
   console.log(`Treasury.nav()        ${ethers.formatEther(await treasury.nav())} ETH`);
@@ -234,14 +205,13 @@ async function main() {
   console.log(`  curve:       "${curveAddr}",`);
   console.log(`  feeSink:     "${FEE_SINK}",`);
   console.log(`  treasury:    "${TREASURY}",`);
-  console.log(`  stakedAgora: "${stakingAddr}",`);
+  console.log(`  stakedLoyal: "${stakingAddr}",`);
   console.log(`  redeemer:    "${redeemerAddr}",`);
-  console.log(`  stakedSuits: "${suitsVaultAddr}",`);
   console.log(`  distributor: "${distributorAddr}",`);
   console.log("");
   console.log("Yield is distributed by calling Distributor.distribute() with ETH.");
-  console.log("It splits 10% to staked Suits and 90% to stAGORA, and reroutes the");
-  console.log("whole amount if one side has no stakers rather than stranding it.");
+  console.log("All of it goes to stLOYAL, split by loyalty WEIGHT: an unlocked");
+  console.log("staker counts 0.5x, a 1-day lock 1x, a 1-week lock 3x.");
   console.log("");
   console.log("Then make ONE small trade and run FeeSink.collect() to prove ETH");
   console.log("reaches the Treasury end to end before anything real depends on it.");

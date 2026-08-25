@@ -193,7 +193,7 @@ contract BeefyCLMAdapter is IYieldAdapter, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @param treasury_   The AGORA Treasury. Immutable — value can go nowhere else.
+     * @param treasury_   The LOYAL Treasury. Immutable — value can go nowhere else.
      * @param clm_        Beefy `BeefyVaultConcLiq` clone.
      * @param rewardPool_ Its `-rp` wrapper, or `address(0)` if the vault has none.
      * @param weth_       WETH on this chain.

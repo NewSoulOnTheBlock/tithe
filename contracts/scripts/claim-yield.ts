@@ -21,8 +21,7 @@ async function main() {
   const t = await ethers.getContractAt("Treasury", process.env.TREASURY!, ethers.provider);
   const dist = await ethers.getContractAt("Distributor", await t.distributor(), ethers.provider);
 
-  const agoraVault = await ethers.getContractAt("StakedAgora", await dist.stakedAgora(), signer);
-  const suitsVault = await ethers.getContractAt("StakedSuits", await dist.stakedSuits(), signer);
+  const loyalVault = await ethers.getContractAt("StakedLoyal", await dist.stakedLoyal(), signer);
 
   const before = await ethers.provider.getBalance(signer.address);
   const navBefore = await t.nav();
@@ -34,28 +33,23 @@ async function main() {
   console.log(`  wallet            ${signer.address}`);
   console.log(`  balance           ${eth(before)} ETH`);
 
-  const [fromAgora, fromSuits] = await Promise.all([
-    agoraVault.pendingYield(signer.address),
-    suitsVault.pendingYield(signer.address),
-  ]);
-  console.log(`  claimable stAGORA ${eth(fromAgora)} ETH`);
-  console.log(`  claimable Suits   ${eth(fromSuits)} ETH`);
+  const fromLoyal = await loyalVault.pendingYield(signer.address);
+  console.log(`  claimable stLOYAL ${eth(fromLoyal)} ETH`);
 
-  if (fromAgora === 0n && fromSuits === 0n) {
+  // The tier the wallet is on, since it decides the share of the next reward.
+  const tier = await loyalVault.effectiveTier(signer.address);
+  const label = ["NONE (0.5x)", "DAY (1x)", "WEEK (3x)"][Number(tier)] ?? String(tier);
+  console.log(`  loyalty tier      ${label}`);
+
+  if (fromLoyal === 0n) {
     console.log("\nNothing to claim.");
     return;
   }
 
-  for (const [label, vault, amount] of [
-    ["stAGORA", agoraVault, fromAgora],
-    ["Suits", suitsVault, fromSuits],
-  ] as const) {
-    if (amount === 0n) continue;
-    console.log(`\nclaiming ${eth(amount)} ETH from ${label}…`);
-    const tx = await vault.claim();
-    await tx.wait();
-    console.log(`  ${tx.hash}`);
-  }
+  console.log(`\nclaiming ${eth(fromLoyal)} ETH from stLOYAL…`);
+  const tx = await loyalVault.claim();
+  await tx.wait();
+  console.log(`  ${tx.hash}`);
 
   line();
   const after = await ethers.provider.getBalance(signer.address);

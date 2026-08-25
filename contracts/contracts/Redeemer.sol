@@ -23,7 +23,7 @@ interface IGate {
 
 /**
  * @title Redeemer
- * @notice Burn AGORA, receive a pro-rata share of the corpus at a haircut
+ * @notice Burn LOYAL, receive a pro-rata share of the corpus at a haircut
  *         (spec §7). This is what turns an accumulating treasury into an actual
  *         price floor.
  *
@@ -32,7 +32,7 @@ interface IGate {
  * ```
  * requestRedeem(amount):
  *     snapshot floorPerToken            // BEFORE the burn — see below
- *     pull AGORA and burn it now        // supply drops now → floor rises now
+ *     pull LOYAL and burn it now        // supply drops now → floor rises now
  *     enqueue(caller, amount, snapshot)
  *
  * execute(id) after redeemDelay:
@@ -61,7 +61,7 @@ interface IGate {
  *
  * Tokens are destroyed at request time, not at execution. That is what makes
  * the benefit to holders immediate and makes abandoning the queue non-free.
- * A `cancel()` would require re-minting, which AGORA cannot do — its supply is
+ * A `cancel()` would require re-minting, which LOYAL cannot do — its supply is
  * fixed by the Pons factory and there is no mint function.
  */
 contract Redeemer is Ownable, ReentrancyGuard {
@@ -78,13 +78,13 @@ contract Redeemer is Ownable, ReentrancyGuard {
 
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
-    IERC20 public immutable agora;
+    IERC20 public immutable loyal;
     ITreasuryRedeem public immutable treasury;
 
     struct Request {
         address owner;
-        uint128 amount;        // AGORA burned
-        uint128 snapshotFloor; // wei per whole AGORA at request time
+        uint128 amount;        // LOYAL burned
+        uint128 snapshotFloor; // wei per whole LOYAL at request time
         uint64 requestedAt;
         bool executed;
     }
@@ -145,11 +145,11 @@ contract Redeemer is Ownable, ReentrancyGuard {
     error DelayTooLong(uint256 requested, uint256 max);
     error AmountTooLarge();
 
-    constructor(address agora_, address treasury_, address owner_) Ownable(owner_) {
-        if (agora_ == address(0) || treasury_ == address(0) || owner_ == address(0)) {
+    constructor(address loyal_, address treasury_, address owner_) Ownable(owner_) {
+        if (loyal_ == address(0) || treasury_ == address(0) || owner_ == address(0)) {
             revert ZeroAddress();
         }
-        agora = IERC20(agora_);
+        loyal = IERC20(loyal_);
         treasury = ITreasuryRedeem(treasury_);
         epochStart = block.timestamp;
     }
@@ -159,7 +159,7 @@ contract Redeemer is Ownable, ReentrancyGuard {
     // -----------------------------------------------------------------------
 
     /**
-     * @notice Burn `amount` AGORA and join the payout queue.
+     * @notice Burn `amount` LOYAL and join the payout queue.
      * @dev The snapshot is taken BEFORE the burn — see the contract notes.
      */
     function requestRedeem(uint256 amount) external nonReentrant returns (uint256 id) {
@@ -175,7 +175,7 @@ contract Redeemer is Ownable, ReentrancyGuard {
         if (snapshotFloor == 0) revert NoFloorYet();
         if (snapshotFloor > type(uint128).max) revert AmountTooLarge();
 
-        agora.safeTransferFrom(msg.sender, address(this), amount);
+        loyal.safeTransferFrom(msg.sender, address(this), amount);
         _burn(amount);
         totalBurned += amount;
 
@@ -254,16 +254,16 @@ contract Redeemer is Ownable, ReentrancyGuard {
 
     /**
      * @dev Burn if the token supports it, otherwise send to the dead address.
-     *      AGORA is deployed by the Pons factory, so `burn()` is verified to
+     *      LOYAL is deployed by the Pons factory, so `burn()` is verified to
      *      exist but not something this contract controls. The Treasury excludes
      *      DEAD from `eligibleSupply`, so the fallback is economically identical
      *      — only `totalSupply()` stops being self-describing.
      */
     function _burn(uint256 amount) internal {
-        try IBurnable(address(agora)).burn(amount) {
+        try IBurnable(address(loyal)).burn(amount) {
             return;
         } catch {
-            agora.safeTransfer(DEAD, amount);
+            loyal.safeTransfer(DEAD, amount);
             emit BurnedViaDeadAddress(amount);
         }
     }

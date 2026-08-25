@@ -8,7 +8,7 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signer
 const RICH = 10_000_000n * 10n ** 18n;
 
 const WAD = 10n ** 18n;
-const SUPPLY = 1_000_000_000n * WAD; // 1B, matching the live AGORA
+const SUPPLY = 1_000_000_000n * WAD; // 1B, matching the live LOYAL
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 const ZERO = ethers.ZeroAddress;
 
@@ -18,7 +18,7 @@ describe("Treasury (ETH-denominated corpus)", () => {
   let holder: HardhatEthersSigner;
   let stranger: HardhatEthersSigner;
 
-  let agora: any;
+  let loyal: any;
   let treasury: any;
   let feeSink: any;
   let escrow: any;
@@ -38,8 +38,8 @@ describe("Treasury (ETH-denominated corpus)", () => {
     await treasury.setRedeemer(redeemer.address);
 
     // ...and only now does the token exist.
-    agora = await (await ethers.getContractFactory("MockAgora")).deploy(SUPPLY);
-    await treasury.setAgora(await agora.getAddress());
+    loyal = await (await ethers.getContractFactory("MockLoyal")).deploy(SUPPLY);
+    await treasury.setLoyal(await loyal.getAddress());
   });
 
   // -------------------------------------------------------------------------
@@ -69,26 +69,26 @@ describe("Treasury (ETH-denominated corpus)", () => {
       const before = await treasury.floorPerToken();
 
       // Burn half the supply to the dead address.
-      await agora.transfer(DEAD, SUPPLY / 2n);
+      await loyal.transfer(DEAD, SUPPLY / 2n);
 
       expect(await treasury.eligibleSupply()).to.equal(SUPPLY / 2n);
       expect(await treasury.floorPerToken()).to.equal(before * 2n);
     });
 
-    it("marks AGORA held by the Treasury at zero and removes it from supply", async () => {
+    it("marks LOYAL held by the Treasury at zero and removes it from supply", async () => {
       await treasury.connect(stranger).fund({ value: ethers.parseEther("1000") });
       const navBefore = await treasury.nav();
 
-      await agora.transfer(await treasury.getAddress(), SUPPLY / 4n);
+      await loyal.transfer(await treasury.getAddress(), SUPPLY / 4n);
 
-      // NAV unchanged — AGORA is never corpus.
+      // NAV unchanged — LOYAL is never corpus.
       expect(await treasury.nav()).to.equal(navBefore);
       // ...and the same balance leaves the denominator, so the two agree.
       expect(await treasury.eligibleSupply()).to.equal(SUPPLY - SUPPLY / 4n);
     });
 
     it("returns zero floor rather than reverting when eligible supply is zero", async () => {
-      await agora.transfer(DEAD, SUPPLY);
+      await loyal.transfer(DEAD, SUPPLY);
       expect(await treasury.eligibleSupply()).to.equal(0n);
       expect(await treasury.floorPerToken()).to.equal(0n);
     });
@@ -531,7 +531,7 @@ describe("Treasury (ETH-denominated corpus)", () => {
 
     it("excludes and re-includes an account", async () => {
       await treasury.connect(stranger).fund({ value: ethers.parseEther("100") });
-      await agora.transfer(holder.address, SUPPLY / 10n);
+      await loyal.transfer(holder.address, SUPPLY / 10n);
 
       const full = await treasury.eligibleSupply();
       await treasury.setExclusion(holder.address, true);
@@ -562,7 +562,7 @@ describe("Treasury (ETH-denominated corpus)", () => {
     });
 
     it("every read survives with no token bound yet", async () => {
-      expect(await bare.agora()).to.equal(ZERO);
+      expect(await bare.loyal()).to.equal(ZERO);
       expect(await bare.eligibleSupply()).to.equal(0n);
       expect(await bare.floorPerToken()).to.equal(0n);
       expect(await bare.nav()).to.equal(0n);
@@ -575,17 +575,17 @@ describe("Treasury (ETH-denominated corpus)", () => {
     });
 
     it("binds the token exactly once", async () => {
-      await expect(bare.setAgora(await agora.getAddress())).to.emit(bare, "AgoraSet");
+      await expect(bare.setLoyal(await loyal.getAddress())).to.emit(bare, "LoyalSet");
       expect(await bare.eligibleSupply()).to.equal(SUPPLY);
 
       await expect(
-        bare.setAgora(await agora.getAddress())
-      ).to.be.revertedWithCustomError(bare, "AgoraAlreadySet");
+        bare.setLoyal(await loyal.getAddress())
+      ).to.be.revertedWithCustomError(bare, "LoyalAlreadySet");
     });
 
     it("refuses a non-contract or zero token", async () => {
-      await expect(bare.setAgora(ZERO)).to.be.revertedWithCustomError(bare, "ZeroAddress");
-      await expect(bare.setAgora(holder.address)).to.be.revertedWithCustomError(
+      await expect(bare.setLoyal(ZERO)).to.be.revertedWithCustomError(bare, "ZeroAddress");
+      await expect(bare.setLoyal(holder.address)).to.be.revertedWithCustomError(
         bare,
         "NotAContract"
       );
@@ -593,7 +593,7 @@ describe("Treasury (ETH-denominated corpus)", () => {
 
     it("blocks non-owners from binding", async () => {
       await expect(
-        bare.connect(stranger).setAgora(await agora.getAddress())
+        bare.connect(stranger).setLoyal(await loyal.getAddress())
       ).to.be.revertedWithCustomError(bare, "OwnableUnauthorizedAccount");
     });
   });
@@ -689,10 +689,10 @@ describe("Treasury (ETH-denominated corpus)", () => {
     });
 
     it("forwards a claimed token leg to the Treasury", async () => {
-      await agora.transfer(await feeSink.getAddress(), 1000n);
-      await feeSink.connect(stranger).forwardToken(await agora.getAddress());
+      await loyal.transfer(await feeSink.getAddress(), 1000n);
+      await feeSink.connect(stranger).forwardToken(await loyal.getAddress());
 
-      expect(await agora.balanceOf(await treasury.getAddress())).to.equal(1000n);
+      expect(await loyal.balanceOf(await treasury.getAddress())).to.equal(1000n);
       // ...and the Treasury still marks it at zero.
       expect(await treasury.nav()).to.equal(0n);
     });

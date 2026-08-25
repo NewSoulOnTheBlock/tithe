@@ -50,17 +50,17 @@ async function main() {
   console.log(`TREASURY_OWNER  ${owner || "(blank → the deploying EOA owns the treasury)"}`);
   const t = new ethers.Contract(process.env.TREASURY!, [
     "function owner() view returns (address)",
-    "function agora() view returns (address)",
+    "function loyal() view returns (address)",
   ], ethers.provider);
   const onChainOwner = await t.owner();
   console.log(`on-chain owner  ${onChainOwner}`);
   console.log(
     onChainOwner.toLowerCase() === signer.address.toLowerCase()
-      ? "                ✓ the signer can run setAgora/setRedeemer/setDistributor directly"
+      ? "                ✓ the signer can run setLoyal/setRedeemer/setDistributor directly"
       : "                ⚠ signer is NOT the owner — bind will print calldata for governance"
   );
-  const bound = await t.agora();
-  console.log(`Treasury.agora  ${bound}  ${bound === ethers.ZeroAddress ? "(unbound — bind will set it)" : "(ALREADY BOUND — bind will skip)"}`);
+  const bound = await t.loyal();
+  console.log(`Treasury.loyal  ${bound}  ${bound === ethers.ZeroAddress ? "(unbound — bind will set it)" : "(ALREADY BOUND — bind will skip)"}`);
   line();
 }
 

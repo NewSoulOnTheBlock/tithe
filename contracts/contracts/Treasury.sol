@@ -12,7 +12,7 @@ interface IDistributor {
 
 /**
  * @title Treasury
- * @notice The collective balance sheet behind AGORA's redemption floor.
+ * @notice The collective balance sheet behind LOYAL's redemption floor.
  *         **ETH-denominated corpus** (spec §4.1, option 1).
  *
  * ## What ETH-denomination buys, and what it costs
@@ -31,7 +31,7 @@ interface IDistributor {
  * adapters, there is no oracle to gate, and `nav()` cannot go stale.
  *
  * The cost is honest and should not be papered over: **the floor is denominated
- * in ETH, so its dollar value moves with ETH.** A floor of 0.000001 ETH/AGORA is
+ * in ETH, so its dollar value moves with ETH.** A floor of 0.000001 ETH/LOYAL is
  * a hard floor in ether and a soft one in dollars. Spec §4.1 recommended USDG
  * for exactly this reason. That trade was made deliberately.
  *
@@ -41,7 +41,7 @@ interface IDistributor {
  *   - tax inflow raises it,
  *   - redemption pays out at a 5% haircut that *stays* in the corpus, so each
  *     redemption is accretive to everyone who did not redeem (spec §7),
- *   - AGORA's supply is fixed and burn-only, so `eligibleSupply` only shrinks.
+ *   - LOYAL's supply is fixed and burn-only, so `eligibleSupply` only shrinks.
  * Floor is therefore monotonically non-decreasing in v1. `floorHighWaterMark`
  * records that, and `FloorRegression` fires if it is ever violated — which can
  * only happen once a yield sleeve exists and takes impermanent loss.
@@ -50,14 +50,14 @@ interface IDistributor {
  * floor would brick redemption at precisely the moment holders most want out,
  * converting an accounting problem into a trapped-funds problem.
  *
- * ## AGORA is never corpus
+ * ## LOYAL is never corpus
  *
- * AGORA held by this contract is marked at **zero** in `nav()`, and the same
+ * LOYAL held by this contract is marked at **zero** in `nav()`, and the same
  * balance is removed from `eligibleSupply()` so numerator and denominator agree
  * (spec §6.1). A token that backs itself makes the floor self-referentially
  * inflatable.
  *
- * Consequence worth understanding: donating AGORA to this contract shrinks the
+ * Consequence worth understanding: donating LOYAL to this contract shrinks the
  * denominator and therefore *raises* reported `floorPerToken` without adding any
  * value. It is not profitable to do (you give up more redemption value than you
  * gain), but it does mean `floorPerToken()` is not manipulation-proof against a
@@ -88,8 +88,8 @@ interface IDistributor {
  *   destination, so funds can only reach `operator` — a compromised owner key
  *   bounds where corpus ETH lands, though not whether it leaves.
  * - **Staker income is untouchable.** Withdrawal is limited to `liquidEth()`,
- *   which excludes `pendingIncome`. ETH already earmarked for stAGORA and staked
- *   Suits is owed to third parties, not corpus, and the owner cannot reach it.
+ *   which excludes `pendingIncome`. ETH already earmarked for stLOYAL and staked
+ *   Income is owed to stakers, not corpus, and the owner cannot reach it.
  * - **Redemption still settles honestly.** `Redeemer` pays
  *   `min(snapshotFloor, currentFloor)`, so a withdrawal between request and
  *   execution reduces the payout rather than letting anyone claim value that is
@@ -119,8 +119,8 @@ contract Treasury is Ownable, ReentrancyGuard {
     // -----------------------------------------------------------------------
 
     /**
-     * @notice The AGORA token. Marked at zero in NAV, always.
-     * @dev Set **once**, after launch, via `setAgora()` — not in the constructor.
+     * @notice The LOYAL token. Marked at zero in NAV, always.
+     * @dev Set **once**, after launch, via `setLoyal()` — not in the constructor.
      *
      *      This is what lets the entire contract set be deployed BEFORE the
      *      token exists, which in turn lets the token be launched with
@@ -130,9 +130,9 @@ contract Treasury is Ownable, ReentrancyGuard {
      *      the fee stream to an address that could not collect it.
      *
      *      Trading immutability for a one-shot setter is a deliberate, narrow
-     *      trade: `setAgora` reverts once set, so the window is a single call.
+     *      trade: `setLoyal` reverts once set, so the window is a single call.
      */
-    IERC20 public agora;
+    IERC20 public loyal;
 
     // -----------------------------------------------------------------------
     // Mutable state
@@ -144,7 +144,7 @@ contract Treasury is Ownable, ReentrancyGuard {
     /// @notice The only address permitted to move ETH out of this contract.
     address public redeemer;
 
-    /// @notice Splits income between stAGORA stakers and staked Suits.
+    /// @notice Routes income to stLOYAL stakers.
     address public distributor;
 
     /**
@@ -170,7 +170,7 @@ contract Treasury is Ownable, ReentrancyGuard {
      *
      *      The lever exists because that specification has a consequence worth
      *      being deliberate about — with no yield adapter deployed there is no
-     *      yield, so stakers and Suits holders earn exactly nothing until one
+     *      yield, so stakers earn exactly nothing until one
      *      exists. Turning this above zero pays them out of trade tax instead,
      *      at the cost of slowing the floor. That is an economic decision, so it
      *      is left off until someone actively makes it.
@@ -208,14 +208,14 @@ contract Treasury is Ownable, ReentrancyGuard {
     /// @notice Wei paid out through `payout`, cumulatively.
     uint256 public cumulativePaidOut;
 
-    /// @notice Highest `floorPerToken()` ever observed, in wei per whole AGORA.
+    /// @notice Highest `floorPerToken()` ever observed, in wei per whole LOYAL.
     uint256 public floorHighWaterMark;
 
     address[] private _adapters;
     mapping(address => bool) public isAdapter;
     mapping(address => uint256) public adapterQueuedAt;
 
-    /// @dev Holders whose AGORA is excluded from `eligibleSupply()`. DEAD is
+    /// @dev Holders whose LOYAL is excluded from `eligibleSupply()`. DEAD is
     ///      always excluded and is NOT stored here.
     address[] private _excluded;
     mapping(address => bool) public isExcluded;
@@ -232,7 +232,7 @@ contract Treasury is Ownable, ReentrancyGuard {
 
     event Funded(address indexed from, uint256 amount, bool isTax);
     event PaidOut(address indexed to, uint256 amount);
-    event AgoraSet(address indexed agora);
+    event LoyalSet(address indexed loyal);
     event IncomeAccrued(uint256 amount, uint256 pendingIncome);
     event IncomeDistributed(uint256 amount);
     event DistributorSet(address indexed previous, address indexed current);
@@ -269,7 +269,7 @@ contract Treasury is Ownable, ReentrancyGuard {
     error AdapterStillFunded(uint256 assets);
     error EthTransferFailed();
     error CannotExcludeDead();
-    error AgoraAlreadySet(address current);
+    error LoyalAlreadySet(address current);
     error NotAContract(address target);
     error DistributorNotSet();
     error OperatorNotSet();
@@ -285,7 +285,7 @@ contract Treasury is Ownable, ReentrancyGuard {
      *               deploying EOA — see spec §10/§11. The deploy script warns
      *               loudly if these are the same address.
      * @dev Takes no token: this contract is deployed BEFORE the token exists.
-     *      Call `setAgora()` once after launch.
+     *      Call `setLoyal()` once after launch.
      */
     constructor(address owner_) Ownable(owner_) {
         if (owner_ == address(0)) revert ZeroAddress();
@@ -294,7 +294,7 @@ contract Treasury is Ownable, ReentrancyGuard {
         operator = owner_;
         emit OperatorSet(address(0), owner_);
 
-        // The Treasury's own AGORA is never corpus, so exclude it from day one.
+        // The Treasury's own LOYAL is never corpus, so exclude it from day one.
         _excluded.push(address(this));
         isExcluded[address(this)] = true;
         emit ExclusionSet(address(this), true);
@@ -303,16 +303,16 @@ contract Treasury is Ownable, ReentrancyGuard {
     /**
      * @notice Bind this Treasury to the launched token. Callable exactly once.
      * @dev Reverts if already set, so the binding cannot be swapped later — a
-     *      re-pointable `agora` would let governance rewrite `eligibleSupply()`
+     *      re-pointable `loyal` would let governance rewrite `eligibleSupply()`
      *      and therefore the floor.
      */
-    function setAgora(address agora_) external onlyOwner {
-        if (agora_ == address(0)) revert ZeroAddress();
-        if (address(agora) != address(0)) revert AgoraAlreadySet(address(agora));
-        if (agora_.code.length == 0) revert NotAContract(agora_);
+    function setLoyal(address loyal_) external onlyOwner {
+        if (loyal_ == address(0)) revert ZeroAddress();
+        if (address(loyal) != address(0)) revert LoyalAlreadySet(address(loyal));
+        if (loyal_.code.length == 0) revert NotAContract(loyal_);
 
-        agora = IERC20(agora_);
-        emit AgoraSet(agora_);
+        loyal = IERC20(loyal_);
+        emit LoyalSet(loyal_);
         _touch();
     }
 
@@ -450,7 +450,7 @@ contract Treasury is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Net asset value in wei. AGORA is marked at zero, always.
+     * @notice Net asset value in wei. LOYAL is marked at zero, always.
      * @dev No oracle is involved: both terms are natively ETH-denominated.
      */
     function nav() public view returns (uint256) {
@@ -459,29 +459,29 @@ contract Treasury is Ownable, ReentrancyGuard {
 
     /**
      * @notice Supply the floor is spread across: total minus burned minus
-     *         protocol-owned AGORA (spec §6).
+     *         protocol-owned LOYAL (spec §6).
      * @dev Do NOT add the staking vault to the exclusion list. It *custodies*
-     *      user AGORA rather than owning it, and stakers must keep their floor
-     *      backing. Exclude only AGORA the protocol itself owns.
+     *      user LOYAL rather than owning it, and stakers must keep their floor
+     *      backing. Exclude only LOYAL the protocol itself owns.
      */
     function eligibleSupply() public view returns (uint256) {
-        // Before `setAgora`, there is no supply to spread the floor across.
+        // Before `setLoyal`, there is no supply to spread the floor across.
         // Returning 0 rather than reverting keeps every read — and therefore
         // `payout()`, which touches them — alive during the pre-launch window.
-        if (address(agora) == address(0)) return 0;
+        if (address(loyal) == address(0)) return 0;
 
-        uint256 supply = agora.totalSupply();
-        uint256 excluded = agora.balanceOf(DEAD);
+        uint256 supply = loyal.totalSupply();
+        uint256 excluded = loyal.balanceOf(DEAD);
 
         uint256 n = _excluded.length;
         for (uint256 i; i < n; ++i) {
-            excluded += agora.balanceOf(_excluded[i]);
+            excluded += loyal.balanceOf(_excluded[i]);
         }
 
         return supply > excluded ? supply - excluded : 0;
     }
 
-    /// @notice Wei of NAV backing each whole AGORA. Zero when supply is zero.
+    /// @notice Wei of NAV backing each whole LOYAL. Zero when supply is zero.
     function floorPerToken() public view returns (uint256) {
         uint256 supply = eligibleSupply();
         if (supply == 0) return 0;
@@ -538,7 +538,7 @@ contract Treasury is Ownable, ReentrancyGuard {
 
     /**
      * @notice Forward all earmarked income to the Distributor. Permissionless.
-     * @dev The Distributor splits it (10% staked Suits / 90% stAGORA by default)
+     * @dev The Distributor forwards it to stLOYAL
      *      and reverts if neither side has stakers — in which case this reverts
      *      too and the income simply stays earmarked here until someone stakes.
      *      It is never silently reclassified as corpus, because it was already
@@ -637,7 +637,7 @@ contract Treasury is Ownable, ReentrancyGuard {
      *      - Funds can only reach `operator`. There is no destination argument,
      *        so this is not a general-purpose escape hatch to any address.
      *      - Only `liquidEth()` is reachable, so **income already earmarked for
-     *        stakers and staked Suits cannot be taken.** That ETH is owed to
+     *        stakers cannot be taken.** That ETH is owed to
      *        third parties, not corpus, and remains outside the owner's reach.
      *      - Every withdrawal is logged with the resulting NAV, so the corpus
      *        can be audited from events alone with no indexer.
@@ -697,7 +697,7 @@ contract Treasury is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Exclude or re-include an account's AGORA in `eligibleSupply()`.
+     * @notice Exclude or re-include an account's LOYAL in `eligibleSupply()`.
      * @dev DEAD is unconditionally excluded and cannot be listed here — listing
      *      it would double-count and understate eligible supply, overstating the
      *      floor.

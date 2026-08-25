@@ -1,0 +1,196 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  The look is built from three things and nothing else: a black ground, two
+  accents lifted straight out of the logo, and CRT artefacts. No gradients that
+  are not light, no glass, no drop shadows — cyberpunk reads as *emission*, so
+  everything bright here is meant to look like it is generating its own light
+  rather than being lit.
+*/
+
+:root {
+  --cyan: #00e5ff;
+  --magenta: #ff2bd1;
+  --void: #04050a;
+}
+
+* {
+  border-color: theme("colors.edge");
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--void);
+  color: theme("colors.bone");
+  font-feature-settings: "ss01", "tnum";
+  overflow-x: hidden;
+}
+
+/* ---- the ground -------------------------------------------------------- */
+
+/*
+  A perspective grid receding to a horizon, plus a very slow scanline sweep.
+  Fixed and behind everything, pointer-events off. Deliberately dim: it should
+  register when you look for it and disappear while you read.
+*/
+.ground {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ground::before {
+  content: "";
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  top: 58%;
+  bottom: -30%;
+  background-image:
+    linear-gradient(to right, rgba(0, 229, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 43, 209, 0.13) 1px, transparent 1px);
+  background-size: 62px 62px;
+  transform: perspective(340px) rotateX(70deg);
+  transform-origin: 50% 0;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 75%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 75%);
+}
+
+/* The horizon glow where the grid meets the sky. */
+.ground::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 58%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan), var(--magenta), transparent);
+  box-shadow: 0 0 40px 6px rgba(0, 229, 255, 0.22);
+}
+
+/* Scanlines. One pixel on, three off — any denser and text stops being crisp. */
+.scan {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.22) 0px,
+    rgba(0, 0, 0, 0.22) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* A single bright line crawling down the page, the way a CRT refresh looks on
+   camera. Slow enough to be atmosphere rather than a distraction. */
+.sweepline {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 140px;
+  z-index: 51;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(0, 229, 255, 0.045), transparent);
+}
+
+/* ---- type -------------------------------------------------------------- */
+
+/*
+  Chromatic aberration, done with two offset copies rather than a filter so the
+  text stays selectable and screen-readable. The copies are aria-hidden.
+*/
+.glitch {
+  position: relative;
+  display: inline-block;
+}
+.glitch::before,
+.glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.glitch::before {
+  color: var(--magenta);
+  transform: translate(-2px, 0);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+.glitch::after {
+  color: var(--cyan);
+  transform: translate(2px, 0);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+
+.neon-cyan {
+  color: var(--cyan);
+  text-shadow: 0 0 12px rgba(0, 229, 255, 0.55);
+}
+.neon-magenta {
+  color: var(--magenta);
+  text-shadow: 0 0 12px rgba(255, 43, 209, 0.5);
+}
+
+/* ---- surfaces ---------------------------------------------------------- */
+
+/*
+  Panels are cut corners, not rounded ones. A 45-degree notch reads as machined
+  metal; a border-radius reads as a web app, which is the thing being avoided.
+*/
+.cut {
+  clip-path: polygon(
+    14px 0,
+    100% 0,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0 100%,
+    0 14px
+  );
+}
+
+.panel {
+  background:
+    linear-gradient(180deg, rgba(16, 22, 38, 0.92), rgba(8, 11, 20, 0.92));
+  border: 1px solid theme("colors.edge");
+  position: relative;
+}
+
+/* A hairline of accent along the top edge — the one place each panel emits. */
+.panel-lit::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--cyan), transparent 70%);
+}
+.panel-lit-magenta::before {
+  background: linear-gradient(90deg, var(--magenta), transparent 70%);
+}
+
+/* Readouts: a number should look like it is on a display, not in a paragraph. */
+.readout {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-flicker,
+  .animate-sweep,
+  .animate-drift,
+  .sweepline {
+    animation: none !important;
+  }
+}

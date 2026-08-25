@@ -9,12 +9,12 @@ const RICH = 10_000_000n * WAD;
 
 describe("Income route: Treasury → Distributor → stakers", () => {
   let owner: HardhatEthersSigner;
-  let alice: HardhatEthersSigner; // AGORA staker
-  let bob: HardhatEthersSigner; // Suits staker
+  let alice: HardhatEthersSigner; // LOYAL staker
+  let bob: HardhatEthersSigner;
   let carol: HardhatEthersSigner; // funder / cranker
 
-  let agora: any, suits: any, escrow: any;
-  let treasury: any, feeSink: any, staking: any, suitsVault: any, distributor: any, redeemer: any;
+  let loyal: any, escrow: any;
+  let treasury: any, feeSink: any, staking: any, distributor: any, redeemer: any;
 
   beforeEach(async () => {
     [owner, alice, bob, carol] = await ethers.getSigners();
@@ -27,34 +27,27 @@ describe("Income route: Treasury → Distributor → stakers", () => {
     ).deploy(await treasury.getAddress(), await escrow.getAddress(), owner.address);
     await treasury.setFeeSink(await feeSink.getAddress());
 
-    agora = await (await ethers.getContractFactory("MockAgora")).deploy(SUPPLY);
-    suits = await (await ethers.getContractFactory("MockSuits")).deploy();
-    await treasury.setAgora(await agora.getAddress());
+    loyal = await (await ethers.getContractFactory("MockLoyal")).deploy(SUPPLY);
+    await treasury.setLoyal(await loyal.getAddress());
 
     staking = await (
-      await ethers.getContractFactory("StakedAgora")
-    ).deploy(await agora.getAddress(), owner.address);
-    suitsVault = await (
-      await ethers.getContractFactory("StakedSuits")
-    ).deploy(await suits.getAddress(), owner.address);
+      await ethers.getContractFactory("StakedLoyal")
+    ).deploy(await loyal.getAddress(), owner.address);
     distributor = await (
       await ethers.getContractFactory("Distributor")
-    ).deploy(await staking.getAddress(), await suitsVault.getAddress(), owner.address);
+    ).deploy(await staking.getAddress());
     redeemer = await (
       await ethers.getContractFactory("Redeemer")
-    ).deploy(await agora.getAddress(), await treasury.getAddress(), owner.address);
+    ).deploy(await loyal.getAddress(), await treasury.getAddress(), owner.address);
 
     await treasury.setDistributor(await distributor.getAddress());
     await treasury.setRedeemer(await redeemer.getAddress());
 
     // Stakers on both sides.
-    await agora.transfer(alice.address, 1000n * WAD);
-    await agora.connect(alice).approve(await staking.getAddress(), 1000n * WAD);
+    await loyal.transfer(alice.address, 1000n * WAD);
+    await loyal.connect(alice).approve(await staking.getAddress(), 1000n * WAD);
     await staking.connect(alice).deposit(1000n * WAD, alice.address);
 
-    await suits.mintMany(bob.address, 1, 2);
-    await suits.connect(bob).setApprovalForAll(await suitsVault.getAddress(), true);
-    await suitsVault.connect(bob).stake([1, 2]);
   });
 
   const taxIn = async (eth: string) => {
@@ -227,14 +220,13 @@ describe("Income route: Treasury → Distributor → stakers", () => {
       await expect(treasury.poke()).to.emit(treasury, "FloorRegression");
     });
 
-    it("delivers that yield to both staker groups", async () => {
+    it("delivers that yield to stakers", async () => {
       await adapter.simulateYield({ value: ethers.parseEther("10") });
       await treasury.realizeSurplus(await adapter.getAddress());
       await treasury.connect(carol).distributeIncome();
 
-      // 10% Suits (2 NFTs) / 90% AGORA
-      expect(await suitsVault.pendingYield(bob.address)).to.equal(ethers.parseEther("1"));
-      expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("9"));
+      // One sink now: all of it reaches stLOYAL.
+      expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("10"));
     });
   });
 
@@ -251,10 +243,10 @@ describe("Income route: Treasury → Distributor → stakers", () => {
       expect(await treasury.cumulativeIncomeDistributed()).to.equal(ethers.parseEther("10"));
     });
 
-    it("splits 10/90 through the Distributor", async () => {
+    it("routes the whole amount through the Distributor", async () => {
       await treasury.distributeIncome();
-      expect(await suitsVault.pendingYield(bob.address)).to.equal(ethers.parseEther("1"));
-      expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("9"));
+      expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("10"));
+      expect(await distributor.cumulativeToLoyal()).to.equal(ethers.parseEther("10"));
     });
 
     it("reverts with nothing to send", async () => {
@@ -273,12 +265,10 @@ describe("Income route: Treasury → Distributor → stakers", () => {
       );
     });
 
-    it("keeps income earmarked when nobody is staked anywhere", async () => {
-      // Unstake both sides.
+    it("keeps income earmarked when nobody is staked", async () => {
       await staking
         .connect(alice)
         .redeem(await staking.balanceOf(alice.address), alice.address, alice.address);
-      await suitsVault.connect(bob).unstake([1, 2]);
 
       await expect(treasury.distributeIncome()).to.be.reverted;
 
@@ -291,7 +281,7 @@ describe("Income route: Treasury → Distributor → stakers", () => {
 
   // =========================================================================
   describe("full loop", () => {
-    it("tax in → floor up → income out → both staker groups paid", async () => {
+    it("tax in → floor up → income out → stakers paid", async () => {
       await treasury.setIncomeShareBps(2000); // 20% income, 80% corpus
 
       await taxIn("1000");
@@ -306,12 +296,10 @@ describe("Income route: Treasury → Distributor → stakers", () => {
       // Floor untouched by the payout.
       expect(await treasury.floorPerToken()).to.equal(floor);
 
-      // 200 split 10/90.
-      expect(await suitsVault.pendingYield(bob.address)).to.equal(ethers.parseEther("20"));
-      expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("180"));
+      // All 200 reaches stLOYAL.
+      expect(await staking.pendingYield(alice.address)).to.equal(ethers.parseEther("200"));
 
-      // Both can actually withdraw it.
-      await expect(suitsVault.connect(bob).claim()).to.not.be.reverted;
+      // And it can actually be withdrawn.
       await expect(staking.connect(alice).claim()).to.not.be.reverted;
 
       // And the Treasury holds exactly the corpus, nothing more.

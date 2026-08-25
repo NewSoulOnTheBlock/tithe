@@ -1,165 +1,104 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IRewardSink {
     function notifyReward() external payable;
-    function totalSupply() external view returns (uint256);
-}
-
-interface INftRewardSink {
-    function notifyReward() external payable;
-    function totalStaked() external view returns (uint256);
+    function totalWeight() external view returns (uint256);
 }
 
 /**
  * @title Distributor
- * @notice Splits protocol yield between staked Suits NFT holders and stAGORA
- *         stakers. Default split: **10% Suits / 90% AGORA**.
+ * @notice Routes protocol income to stLOYAL. One destination, fixed at
+ *         construction.
  *
- * ## Why this contract exists after being folded away
+ * ## Why a router at all, with only one sink
  *
- * `StakedAgora` originally absorbed the Distributor from spec §3.1, on the
- * grounds that with a single ETH-denominated sink a router would only forward
- * value and re-derive accounting the vault already kept. That reasoning held
- * exactly as long as there was one sink. There are now two, and a split has to
- * live somewhere that both can be reasoned about — so it comes back.
+ * It was folded away once, on the grounds that with a single ETH-denominated
+ * sink a router only forwards value and re-derives accounting the vault already
+ * keeps. Then Suits arrived and a split had to live somewhere, so it came back.
+ * Suits is now gone again and the split with it — but the contract stays,
+ * because the Treasury calls `distributor.distribute{value: ...}()` and having
+ * one address to re-point is what makes a second sink a deployment rather than
+ * a Treasury upgrade.
  *
- * ## Empty-sink rerouting
+ * ## No owner, and that is the point
  *
- * Either side can legitimately have nobody staked, especially early. Neither
- * vault will accept ETH it cannot account for — both revert with `NoStakers` —
- * so this contract checks first and sends the whole amount to whichever side has
- * stakers.
+ * Losing the second sink removed the split, `suitsBps`, the reroute logic and
+ * `Ownable` with it. There is no privileged caller on this contract at all:
+ * nothing to set, nothing to pause, and no address that can redirect the
+ * income stream. The destination is immutable and no argument names one, so a
+ * permissionless caller can only push value along the path it was always going
+ * to take.
  *
- * That is deliberate: the alternative is holding an undistributable balance
- * here, which quietly accrues an obligation nobody can claim and which no
- * accounting elsewhere can see. If **neither** side has stakers the call reverts
- * and the caller keeps its ETH to retry later, rather than parking value in a
- * contract with no owner-withdrawal path.
+ * ## Weight, not supply
  *
- * ## Trust
+ * `StakedLoyal` divides rewards by **weight**, not share count — an unlocked
+ * staker counts half, a week-locked one counts triple. So the "is anyone there
+ * to receive this" question has to be asked of `totalWeight()`. Asking
+ * `totalSupply()` would say yes in a state where the vault itself would revert.
  *
- * Both destinations are `immutable`. The owner can change only the split, and
- * only within a hard cap. There is no withdrawal function and no arbitrary call:
- * ETH that enters can only leave toward the two staking contracts.
+ * ## Nothing is ever parked here
+ *
+ * If the vault has no weight the call reverts and the caller keeps its ETH to
+ * retry later. Holding an undistributable balance would quietly accrue an
+ * obligation nobody can claim and no accounting elsewhere can see.
  */
-contract Distributor is Ownable, ReentrancyGuard {
-    uint256 public constant BPS = 10_000;
+contract Distributor is ReentrancyGuard {
+    /// @notice The single, immutable destination for all distributed income.
+    IRewardSink public immutable stakedLoyal;
 
-    /// @notice Hard ceiling on the NFT slice, so governance cannot redirect the
-    ///         whole income stream away from AGORA stakers.
-    uint16 public constant MAX_SUITS_BPS = 3_000; // 30%
+    /// @notice Everything ever forwarded to stLOYAL.
+    uint256 public cumulativeToLoyal;
 
-    /// @notice stAGORA vault.
-    IRewardSink public immutable stakedAgora;
-
-    /// @notice Staked Suits NFT vault.
-    INftRewardSink public immutable stakedSuits;
-
-    /// @notice Share of yield routed to staked Suits, in bps. Default 10%.
-    uint16 public suitsBps = 1_000;
-
-    uint256 public cumulativeToSuits;
-    uint256 public cumulativeToAgora;
-
-    event Distributed(uint256 total, uint256 toSuits, uint256 toAgora);
-    event SuitsBpsSet(uint16 previous, uint16 current);
-    event ReroutedToAgora(uint256 amount);
-    event ReroutedToSuits(uint256 amount);
+    event Distributed(uint256 amount);
 
     error NothingToDistribute();
-    error NoStakersAnywhere();
-    error SuitsBpsTooHigh(uint16 requested, uint16 max);
+    error NoStakers();
     error ZeroAddress();
 
-    constructor(address stakedAgora_, address stakedSuits_, address owner_) Ownable(owner_) {
-        if (stakedAgora_ == address(0) || stakedSuits_ == address(0) || owner_ == address(0)) {
-            revert ZeroAddress();
-        }
-        stakedAgora = IRewardSink(stakedAgora_);
-        stakedSuits = INftRewardSink(stakedSuits_);
+    constructor(address stakedLoyal_) {
+        if (stakedLoyal_ == address(0)) revert ZeroAddress();
+        stakedLoyal = IRewardSink(stakedLoyal_);
     }
 
-    /**
-     * @notice Split and forward the attached ETH. Permissionless.
-     * @dev Both destinations are fixed at construction, so an open caller can
-     *      only push value along the one path it was always going to take.
-     */
+    /// @notice Forward the attached ETH to stLOYAL. Permissionless.
     function distribute() external payable nonReentrant {
         uint256 total = msg.value;
         if (total == 0) revert NothingToDistribute();
+        if (stakedLoyal.totalWeight() == 0) revert NoStakers();
 
-        bool suitsHasStakers = stakedSuits.totalStaked() != 0;
-        bool agoraHasStakers = stakedAgora.totalSupply() != 0;
+        cumulativeToLoyal += total;
+        stakedLoyal.notifyReward{value: total}();
 
-        if (!suitsHasStakers && !agoraHasStakers) revert NoStakersAnywhere();
-
-        uint256 toSuits = (total * suitsBps) / BPS;
-        uint256 toAgora = total - toSuits;
-
-        // Reroute rather than strand. A sink with no stakers cannot account for
-        // the ETH, and holding it here would create a claim nobody can exercise.
-        if (!suitsHasStakers && toSuits != 0) {
-            emit ReroutedToAgora(toSuits);
-            toAgora += toSuits;
-            toSuits = 0;
-        }
-        if (!agoraHasStakers && toAgora != 0) {
-            emit ReroutedToSuits(toAgora);
-            toSuits += toAgora;
-            toAgora = 0;
-        }
-
-        if (toSuits != 0) {
-            cumulativeToSuits += toSuits;
-            stakedSuits.notifyReward{value: toSuits}();
-        }
-        if (toAgora != 0) {
-            cumulativeToAgora += toAgora;
-            stakedAgora.notifyReward{value: toAgora}();
-        }
-
-        emit Distributed(total, toSuits, toAgora);
+        emit Distributed(total);
     }
 
-    /// @notice How `amount` would split right now, after any rerouting.
-    function preview(uint256 amount) external view returns (uint256 toSuits, uint256 toAgora) {
-        bool suitsHasStakers = stakedSuits.totalStaked() != 0;
-        bool agoraHasStakers = stakedAgora.totalSupply() != 0;
-
-        toSuits = (amount * suitsBps) / BPS;
-        toAgora = amount - toSuits;
-
-        if (!suitsHasStakers) {
-            toAgora += toSuits;
-            toSuits = 0;
-        }
-        if (!agoraHasStakers) {
-            toSuits += toAgora;
-            toAgora = 0;
-        }
+    /**
+     * @notice How `amount` would be routed right now.
+     * @dev Kept so Treasury-side tooling has a uniform shape whether or not a
+     *      second sink ever returns. With one destination the answer is always
+     *      "all of it", and a caller should not have to special-case that.
+     */
+    function preview(uint256 amount) external pure returns (uint256 toLoyal) {
+        return amount;
     }
 
-    function setSuitsBps(uint16 bps) external onlyOwner {
-        if (bps > MAX_SUITS_BPS) revert SuitsBpsTooHigh(bps, MAX_SUITS_BPS);
-        emit SuitsBpsSet(suitsBps, bps);
-        suitsBps = bps;
-    }
-
-    /// @dev Plain transfers are accepted but do nothing until `distribute()`.
+    /// @dev Plain transfers are accepted but do nothing until `flush()`.
     receive() external payable {}
 
-    /// @notice Push any idle balance through the split. Permissionless.
+    /**
+     * @notice Push any idle balance through to stLOYAL. Permissionless.
+     * @dev Re-enters through the payable path so one rule governs both entries
+     *      — a stray transfer cannot take a shortcut past the weight check.
+     */
     function flush() external returns (uint256 amount) {
         amount = address(this).balance;
         if (amount == 0) revert NothingToDistribute();
-        // Re-enter through the payable path so one split rule governs both.
         (bool ok, ) = address(this).call{value: amount}(
             abi.encodeWithSelector(this.distribute.selector)
         );
-        if (!ok) revert NoStakersAnywhere();
+        if (!ok) revert NoStakers();
     }
 }
