@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { SiteHeader } from "@/components/SiteHeader";
 
 export const metadata: Metadata = {
   title: "LOYAL — loyalty is something you earn every day",
   description:
-    "A 4% trade tax funding a reserve on Robinhood Chain. Stake LOYAL for a share of it — half if you make no promise, triple if you lock for a week.",
+    "A 2% trade tax split with the people who stake. Half a share if you make no promise, triple if you lock for a week. On Robinhood Chain.",
   icons: { icon: "/logo.webp" },
   openGraph: {
     title: "LOYAL",
@@ -22,10 +21,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="ground" aria-hidden="true" />
         <div className="scan" aria-hidden="true" />
         <div className="sweepline animate-sweep" aria-hidden="true" />
-        <div className="relative z-10">
-          <SiteHeader />
-          {children}
-        </div>
+        {/* No header here: `/` is a windowed shell that carries its own, and
+            `/stake` mounts SiteHeader itself. A layout-level header would sit
+            on top of the desktop's own top rail. */}
+        {children}
       </body>
     </html>
   );

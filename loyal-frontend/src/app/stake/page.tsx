@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { SiteHeader } from "@/components/SiteHeader";
 import { Stake } from "@/components/Stake";
 import { Live } from "@/components/Live";
 import { useChain } from "@/lib/useChain";
@@ -26,7 +27,9 @@ export default function StakePage() {
   const tax = snap?.curve.taxBps != null ? Number(snap.curve.taxBps) : LOYAL_TAX_BPS_FALLBACK;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 pb-28 pt-10 sm:px-8">
+    <div className="relative z-10">
+      <SiteHeader />
+      <main className="mx-auto w-full max-w-5xl px-5 pb-28 pt-10 sm:px-8">
       <Link
         href="/"
         className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-ash transition-colors hover:text-cyan"
@@ -48,6 +51,7 @@ export default function StakePage() {
         <Stake live={vaultLive} tax={tax} />
         <Live snap={snap} error={error} />
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

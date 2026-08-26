@@ -186,7 +186,52 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* ---- the OS shell ------------------------------------------------------ */
+
+/*
+  The one piece of motion in the window chrome: a short bright segment crawling
+  along the rule under the focused window's title. It marks which panel is live
+  without a label, a colour swap, or greying out the others.
+*/
+@keyframes os-crawl {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(420%);
+  }
+}
+.os-crawl {
+  animation: os-crawl 3.8s linear infinite;
+}
+
+/*
+  Window scrollbars.
+
+  Worth the six lines: a default scrollbar is the most era-specific object left
+  on the screen, and one grey Windows gutter down the side of a panel undoes the
+  whole look. Firefox gets the standard properties, WebKit the pseudo-elements.
+*/
+.os-client {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 229, 255, 0.25) transparent;
+  overscroll-behavior: contain;
+}
+.os-client::-webkit-scrollbar {
+  width: 6px;
+}
+.os-client::-webkit-scrollbar-track {
+  background: transparent;
+}
+.os-client::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.22);
+}
+.os-client::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.45);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .os-crawl,
   .animate-flicker,
   .animate-sweep,
   .animate-drift,
