@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { parseUnits, formatUnits } from "ethers";
 import { LOYAL, TIERS, tierByIndex, type TierKey, isLive, explorerTx } from "@/lib/chain";
 import { ST_LOYAL_DECIMALS } from "@/lib/chain";
 import { VAULT_ABI, ERC20_ABI, type Position } from "@/lib/account";
 import { writable, type TxRunner } from "@/lib/tx";
-import { fmtGrouped, fmtSig, fmtDuration, DASH } from "@/lib/format";
+import { fmtGrouped, fmtSig, fmtDuration, fmtDateTime, DASH } from "@/lib/format";
+import { useNow } from "@/lib/clock";
 import type { Wallet } from "@/lib/wallet";
 import { cn } from "@/lib/utils";
 
@@ -173,6 +174,18 @@ export function CommitPane({
   const [selected, setSelected] = useState<TierKey>("DAY");
   const [amount, setAmount] = useState("");
   const tier = TIERS.find((t) => t.key === selected)!;
+  const now = useNow(30_000);
+
+  /**
+   * The date this commitment would run to, shown before signing rather than
+   * after. "1 week" is an abstraction people routinely underestimate; a date is
+   * something you can check against a calendar, and this is the one screen
+   * where changing your mind is still free.
+   *
+   * Labelled "about" because the contract stamps `block.timestamp` at
+   * execution, not now.
+   */
+  const wouldLockUntil = tier.lockSeconds > 0 && now > 0 ? now + tier.lockSeconds : 0;
 
   const live = isLive(LOYAL.stakedLoyal);
   const raw = toRaw(amount, 18);
@@ -311,6 +324,16 @@ export function CommitPane({
 
           <p className="mt-3 text-[13px] leading-relaxed text-bone/90">{tier.line}</p>
 
+          {/* What you are actually agreeing to, as a date. */}
+          <div className="mt-4 flex items-baseline justify-between gap-3 border-y border-cyan/15 py-2.5">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-ash">
+              {tier.lockSeconds > 0 ? "Locked until about" : "Lock"}
+            </span>
+            <span className={cn("readout text-[11.5px]", tier.lockSeconds > 0 ? "text-bone" : "text-cyan")}>
+              {tier.lockSeconds > 0 ? fmtDateTime(wouldLockUntil) : "none — leave whenever"}
+            </span>
+          </div>
+
           <div className="mt-5">
             <AmountField
               value={amount}
@@ -383,14 +406,9 @@ export function PositionPane({
   tx: TxRunner;
 }) {
   const [amount, setAmount] = useState("");
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-
-  // A lock countdown that does not tick is a screenshot. One second is fine —
-  // this only runs while the pane is mounted, and it is the only timer here.
-  useEffect(() => {
-    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(t);
-  }, []);
+  // Ticks every second so the countdown moves; 0 until mounted so the server
+  // and the first client render agree.
+  const now = useNow(1_000);
 
   if (!wallet.account) {
     return (
@@ -465,15 +483,20 @@ export function PositionPane({
       {/* ---- the lock ---- */}
       <div className="mt-5">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[9px] uppercase tracking-[0.2em] text-ash">Lock</span>
+          <span className="text-[9px] uppercase tracking-[0.2em] text-ash">
+            {locked ? "Locked until" : "Lock"}
+          </span>
           <span className={cn("readout text-[11px]", locked ? "text-magenta" : "text-cyan")}>
             {pos.lockedUntil === null
               ? DASH
               : locked
-                ? `${fmtDuration(remaining)} left`
+                ? fmtDateTime(pos.lockedUntil)
                 : "open — you can leave"}
           </span>
         </div>
+        {locked && (
+          <p className="mt-1 text-right text-[10px] text-ash/60">{fmtDuration(remaining)} left</p>
+        )}
         <div className="mt-2 h-1 w-full bg-edge">
           <div
             className={cn("h-full transition-all duration-1000", locked ? "bg-magenta" : "bg-cyan")}

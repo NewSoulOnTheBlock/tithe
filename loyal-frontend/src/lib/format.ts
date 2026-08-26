@@ -89,6 +89,28 @@ export function bpsToPct(bps: number | bigint | null | undefined): string {
   return `${(n / 100).toFixed(n % 100 === 0 ? 0 : 2)}%`;
 }
 
+/**
+ * A unix timestamp as an absolute local date and time.
+ *
+ * A countdown alone ("6d 4h left") is not something anyone can plan around — it
+ * answers "how long" but never "when", and a week-long commitment is exactly
+ * the kind of thing people want to hold next to a calendar. Both are shown,
+ * because they answer different questions.
+ *
+ * Only ever called after mount (see `useNow`), so locale formatting here cannot
+ * produce a hydration mismatch.
+ */
+export function fmtDateTime(unix: number | null | undefined): string {
+  if (unix === null || unix === undefined || unix === 0) return DASH;
+  return new Date(unix * 1000).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** Seconds → the largest sensible unit. Used for lock countdowns. */
 export function fmtDuration(seconds: number): string {
   if (seconds <= 0) return "expired";

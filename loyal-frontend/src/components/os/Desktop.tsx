@@ -67,8 +67,11 @@ type Def = {
  * instead of on top of whatever is already there.
  */
 const WINDOWS: Def[] = [
-  { id: "def", index: "0x01", title: "loyalty.def", icon: "def", width: 530, maxH: 620, home: { x: 16, y: 12 } },
-  { id: "commit", index: "0x02", title: "commit.exe", icon: "commit", width: 530, maxH: 740, home: { x: 562, y: 12 } },
+  { id: "def", index: "0x01", title: "loyalty.def", icon: "def", width: 500, maxH: 620, home: { x: 16, y: 12 } },
+  // The widest of the six on purpose: it carries the axis, the chosen-tier
+  // panel and the form, and the axis is the one thing here that is genuinely
+  // a picture — squeezing it costs the comparison the whole pane exists to make.
+  { id: "commit", index: "0x02", title: "commit.exe", icon: "commit", width: 640, maxH: 780, home: { x: 532, y: 12 } },
   { id: "position", index: "0x06", title: "position", icon: "position", width: 500, maxH: 660, home: { x: 300, y: 60 } },
   { id: "reserve", index: "0x03", title: "reserve.sys", icon: "reserve", width: 520, maxH: 480, home: { x: 92, y: 300 } },
   { id: "notice", index: "0x04", title: "notice.txt", icon: "notice", width: 480, maxH: 440, home: { x: 420, y: 210 }, accent: "magenta" },
@@ -83,9 +86,10 @@ const OPEN_ON_LOAD: WinId[] = ["def", "commit"];
  * Not an aesthetic round number: it is what the two default windows need to sit
  * side by side without the clamp shoving one on top of the other. 16 + 530 for
  * the first, 562 + 530 for the second, plus the 74px launcher and a margin —
- * 1180 is the first width where that fits. Below it the stack is genuinely
- * better than a desktop with both windows in a pile, and iPad landscape
- * (1024) lands there deliberately.
+ * 1180 is the first width where both fit with only a little overlap once the
+ * clamp has had its say. Below it the stack is genuinely better than a desktop
+ * with two windows in a pile, and iPad landscape (1024) lands there
+ * deliberately.
  */
 const DESKTOP_MIN = 1180;
 
