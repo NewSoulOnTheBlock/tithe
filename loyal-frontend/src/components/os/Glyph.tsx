@@ -9,7 +9,7 @@
  * Everything is `currentColor` and 1.25 stroke, so an icon inherits whatever
  * state its container is in and glows with it rather than being recoloured.
  */
-export type GlyphName = "def" | "commit" | "position" | "reserve" | "notice" | "sys" | "close" | "min" | "link";
+export type GlyphName = "def" | "commit" | "position" | "chart" | "reserve" | "notice" | "sys" | "close" | "min" | "link" | "telegram" | "x";
 
 export function Glyph({ name, size = 20, className }: { name: GlyphName; size?: number; className?: string }) {
   const p = {
@@ -55,6 +55,18 @@ export function Glyph({ name, size = 20, className }: { name: GlyphName; size?: 
           <path d="M15.5 13.5h2" />
         </svg>
       );
+    // Three candles with wicks — the thing itself, not a generic line graph.
+    case "chart":
+      return (
+        <svg {...p}>
+          <path d="M6.5 4v3M6.5 15v5" />
+          <rect x="4.5" y="7" width="4" height="8" />
+          <path d="M12 3v4M12 14v3" />
+          <rect x="10" y="7" width="4" height="7" />
+          <path d="M17.5 6v2M17.5 17v3" />
+          <rect x="15.5" y="8" width="4" height="9" />
+        </svg>
+      );
     // A stacked reserve, read as strata rather than as a cylinder.
     case "reserve":
       return (
@@ -91,6 +103,29 @@ export function Glyph({ name, size = 20, className }: { name: GlyphName; size?: 
       return (
         <svg {...p} strokeWidth={1.5}>
           <path d="M6 17.5h12" />
+        </svg>
+      );
+    // A paper plane, stroked to match everything else in the rail.
+    case "telegram":
+      return (
+        <svg {...p}>
+          <path d="M20.5 4.5 3.5 11l5.2 1.9L20.5 4.5Z" />
+          <path d="m20.5 4.5-3 14.8-5.3-5.1" />
+          <path d="m8.7 12.9 3.5 1.3-.6 4.2 2.3-2.9" />
+        </svg>
+      );
+    /*
+      The one filled mark in the set, and deliberately.
+
+      X's logo is two tapered strokes, and drawing it as an even-weight stroked
+      cross produces something indistinguishable from the close button four
+      icons away. Recognisability beats consistency here — nobody has to guess
+      what this is, and nobody clicks it thinking it dismisses something.
+    */
+    case "x":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
         </svg>
       );
     case "link":

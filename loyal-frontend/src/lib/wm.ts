@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * server and the first client paint agree.
  */
 
-export type WinId = "def" | "commit" | "position" | "reserve" | "notice" | "sys";
+export type WinId = "def" | "commit" | "position" | "chart" | "reserve" | "notice" | "sys";
 
 export type WinState = {
   open: boolean;
@@ -46,7 +46,7 @@ export type Wm = {
   beginDrag: (id: WinId, e: React.PointerEvent) => void;
 };
 
-const IDS: WinId[] = ["def", "commit", "position", "reserve", "notice", "sys"];
+const IDS: WinId[] = ["def", "commit", "position", "chart", "reserve", "notice", "sys"];
 
 export function useWm(initiallyOpen: WinId[], enabled: boolean): Wm {
   const [state, setState] = useState<Record<WinId, WinState>>(() => {

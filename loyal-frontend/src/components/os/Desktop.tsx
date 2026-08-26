@@ -9,10 +9,11 @@ import { Window } from "./Window";
 import { Glyph, type GlyphName } from "./Glyph";
 import { DefPane, ReservePane, NoticePane, SysPane } from "./Panes";
 import { CommitPane, PositionPane } from "./StakePanes";
+import { ChartPane } from "./ChartPane";
 import { usePosition } from "@/lib/account";
 import { useTx } from "@/lib/tx";
 import { LOYAL, LOYAL_TAX_BPS_FALLBACK, CHAIN_ID, SOCIALS, isLive } from "@/lib/chain";
-import { fmtSig, shortAddr, DASH } from "@/lib/format";
+import { fmtSig, fmtCompact, pctOfSupply, shortAddr, DASH } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -68,17 +69,20 @@ type Def = {
  */
 const WINDOWS: Def[] = [
   { id: "def", index: "0x01", title: "loyalty.def", icon: "def", width: 500, maxH: 620, home: { x: 16, y: 12 } },
+  // Wider than the rest: a chart squeezed narrow stops being readable as a
+  // shape, and the shape is the only thing it is for.
+  { id: "chart", index: "0x02", title: "chart.exe", icon: "chart", width: 600, maxH: 620, home: { x: 150, y: 90 } },
   // The widest of the six on purpose: it carries the axis, the chosen-tier
   // panel and the form, and the axis is the one thing here that is genuinely
   // a picture — squeezing it costs the comparison the whole pane exists to make.
-  { id: "commit", index: "0x02", title: "commit.exe", icon: "commit", width: 640, maxH: 780, home: { x: 532, y: 12 } },
-  { id: "position", index: "0x06", title: "position", icon: "position", width: 500, maxH: 660, home: { x: 300, y: 60 } },
+  { id: "commit", index: "0x03", title: "commit.exe", icon: "commit", width: 640, maxH: 780, home: { x: 532, y: 12 } },
+  { id: "position", index: "0x04", title: "position", icon: "position", width: 500, maxH: 660, home: { x: 300, y: 60 } },
   // Titled for what it shows. It was `reserve.sys` while it reported a reserve;
   // with the corpus permanently empty those rows are gone and what is left is
   // market and vault state, so the name follows the content.
-  { id: "reserve", index: "0x03", title: "chain.sys", icon: "reserve", width: 520, maxH: 480, home: { x: 92, y: 300 } },
-  { id: "notice", index: "0x04", title: "notice.txt", icon: "notice", width: 480, maxH: 440, home: { x: 420, y: 210 }, accent: "magenta" },
-  { id: "sys", index: "0x05", title: "system", icon: "sys", width: 520, maxH: 560, home: { x: 250, y: 130 } },
+  { id: "reserve", index: "0x05", title: "chain.sys", icon: "reserve", width: 520, maxH: 480, home: { x: 92, y: 300 } },
+  { id: "notice", index: "0x06", title: "notice.txt", icon: "notice", width: 480, maxH: 440, home: { x: 420, y: 210 }, accent: "magenta" },
+  { id: "sys", index: "0x07", title: "system", icon: "sys", width: 520, maxH: 560, home: { x: 250, y: 130 } },
 ];
 
 const OPEN_ON_LOAD: WinId[] = ["def", "commit"];
@@ -133,6 +137,7 @@ export function Desktop() {
       case "def": return <DefPane tax={tax} />;
       case "commit": return <CommitPane wallet={w} pos={pos} tx={tx} />;
       case "position": return <PositionPane wallet={w} pos={pos} tx={tx} supply={snap?.token.totalSupply ?? null} />;
+      case "chart": return <ChartPane snap={snap} />;
       case "reserve": return <ReservePane snap={snap} error={error} />;
       case "notice": return <NoticePane tax={tax} />;
       case "sys": return <SysPane snap={snap} tax={tax} />;
@@ -235,7 +240,21 @@ export function Desktop() {
         <Telem k="blk" v={snap?.block != null ? String(snap.block) : DASH} />
         <Telem k="tax" v={`${(tax / 100).toFixed(tax % 100 === 0 ? 0 : 2)}%`} />
         <Telem k="price" v={snap?.curve.priceWad != null ? `${fmtSig(snap.curve.priceWad, 3)} eth` : DASH} />
-        <Telem k="staked" v={snap?.staking.totalAssets != null ? fmtSig(snap.staking.totalAssets, 3) : DASH} />
+        {/* Compact, and with its share of supply — "10000000" in a status
+            strip is a number nobody can place at a glance, and the percentage
+            is the half that carries meaning. */}
+        <Telem
+          k="staked"
+          v={
+            snap?.staking.totalAssets != null
+              ? `${fmtCompact(snap.staking.totalAssets)}${
+                  pctOfSupply(snap.staking.totalAssets, snap.token.totalSupply)
+                    ? ` (${pctOfSupply(snap.staking.totalAssets, snap.token.totalSupply)})`
+                    : ""
+                }`
+              : DASH
+          }
+        />
         <span className="ml-auto hidden shrink-0 gap-4 sm:flex">
           <a className="transition-colors hover:text-cyan" href={SOCIALS.telegram} target="_blank" rel="noreferrer">telegram</a>
           <a className="transition-colors hover:text-cyan" href={SOCIALS.x} target="_blank" rel="noreferrer">x</a>
@@ -298,6 +317,34 @@ function Launcher({ wm, horizontal }: { wm: ReturnType<typeof useWm>; horizontal
           </button>
         );
       })}
+
+      {/*
+        Community, pinned to the far end of the rail.
+
+        `mt-auto` on the vertical rail pushes them to the bottom, away from the
+        windows — they are exits from the page, not things that open in it, and
+        mixing the two would make the rail lie about what a click does. The
+        divider says the same thing without a label. They stay listed in the
+        system window too: this is the shortcut, that is the reference.
+      */}
+      <div className={cn("flex shrink-0 gap-1", horizontal ? "ml-2 border-l border-edge pl-2" : "mt-auto flex-col border-t border-edge pt-2")}>
+        {[
+          { href: SOCIALS.telegram, icon: "telegram" as const, label: "telegram" },
+          { href: SOCIALS.x, icon: "x" as const, label: "x" },
+        ].map((s) => (
+          <a
+            key={s.label}
+            href={s.href}
+            target="_blank"
+            rel="noreferrer"
+            title={s.label}
+            className="group flex shrink-0 flex-col items-center gap-1 px-2 py-2 text-ash/50 transition-colors hover:text-cyan"
+          >
+            <Glyph name={s.icon} size={s.icon === "x" ? 15 : 18} className="transition-transform duration-200 group-hover:-translate-y-0.5" />
+            <span className="text-[8px] uppercase tracking-[0.14em]">{s.label}</span>
+          </a>
+        ))}
+      </div>
     </nav>
   );
 }
