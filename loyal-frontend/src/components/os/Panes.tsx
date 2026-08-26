@@ -1,7 +1,7 @@
 "use client";
 
 import type { Snapshot } from "@/lib/reads";
-import { fmtSig, fmtCompact, DASH, shortAddr } from "@/lib/format";
+import { fmtSig, fmtCompact, pctOfSupply, DASH, shortAddr } from "@/lib/format";
 import { LOYAL, EXPLORER, SOCIALS, isLive, explorerAddr, CHAIN_ID } from "@/lib/chain";
 import { Copyable } from "@/components/Copyable";
 import { Glyph } from "./Glyph";
@@ -85,9 +85,9 @@ export function DefPane({ tax }: { tax: number }) {
       </p>
 
       <p className="mt-4 text-[13px] leading-relaxed text-bone/90">
-        Every trade pays <span className="neon-cyan">{(tax / 100).toFixed(tax % 100 === 0 ? 0 : 2)}%</span>{" "}
-        into a shared reserve. Stake, and you take a cut of it. How big a cut is decided by how
-        long you are willing to be held to it.
+        Every trade pays <span className="neon-cyan">{(tax / 100).toFixed(tax % 100 === 0 ? 0 : 2)}%</span>,
+        and a share of it goes to the people who staked. How big a share is decided by how long
+        you are willing to be held to it.
       </p>
     </div>
   );
@@ -96,10 +96,12 @@ export function DefPane({ tax }: { tax: number }) {
 /* ==========================================================================
    0x03 — RESERVE.SYS
    ========================================================================== */
-function Row({ label, value, unit, note, accent }: {
+function Row({ label, value, unit, pct, note, accent }: {
   label: string;
   value: string | null;
   unit?: string;
+  /** Rendered in parentheses after the unit, e.g. a share of supply. */
+  pct?: string | null;
   note?: string;
   accent?: "cyan" | "magenta";
 }) {
@@ -124,6 +126,9 @@ function Row({ label, value, unit, note, accent }: {
         {!missing && unit && (
           <span className="ml-1 text-[9px] font-normal uppercase tracking-[0.16em] text-ash">{unit}</span>
         )}
+        {!missing && pct && (
+          <span className="ml-1.5 text-[10px] font-normal text-ash/70">({pct})</span>
+        )}
       </span>
     </div>
   );
@@ -131,7 +136,6 @@ function Row({ label, value, unit, note, accent }: {
 
 export function ReservePane({ snap, error }: { snap: Snapshot | null; error: string | null }) {
   const c = snap?.curve;
-  const r = snap?.reserve;
   const t = snap?.token;
   const s = snap?.staking;
   const circulating = t?.totalSupply != null && t?.burned != null ? t.totalSupply - t.burned : null;
@@ -153,9 +157,23 @@ export function ReservePane({ snap, error }: { snap: Snapshot | null; error: str
           accent="magenta"
         />
         <Row label="Circulating" value={circulating != null ? fmtCompact(circulating) : null} unit="LOYAL" note="fixed supply, burn-only" />
-        <Row label="Reserve" value={r?.nav != null ? fmtSig(r.nav, 4) : null} unit="ETH" note={r?.deployed ? "corpus held by the Treasury" : "Treasury unreachable"} />
-        <Row label="Floor per token" value={r?.floorPerToken != null ? fmtSig(r.floorPerToken, 4) : null} unit="ETH" note="reserve ÷ eligible supply" />
-        <Row label="Total staked" value={s?.totalAssets != null ? fmtCompact(s.totalAssets) : null} unit="LOYAL" note={s?.deployed ? "custodied by the vault" : "vault unreachable"} accent="cyan" />
+        {/*
+          Reserve and floor-per-token used to sit here and both read a hard 0.
+
+          Not a display bug — a structural one. The whole trade tax is allocated
+          the moment it arrives, so the corpus receives nothing and
+          `floorPerToken()` can never move off zero. A row that is correct,
+          live, and permanently zero teaches a reader that the numbers on this
+          page do not mean anything. Removed rather than dressed up.
+        */}
+        <Row
+          label="Total staked"
+          value={s?.totalAssets != null ? fmtCompact(s.totalAssets) : null}
+          unit="LOYAL"
+          pct={pctOfSupply(s?.totalAssets, t?.totalSupply)}
+          note={s?.deployed ? "custodied by the vault" : "vault unreachable"}
+          accent="cyan"
+        />
         <Row label="Paid to stakers" value={s?.cumulativeRewards != null ? fmtSig(s.cumulativeRewards, 4) : null} unit="ETH" note="all time" />
       </div>
 
@@ -174,7 +192,6 @@ export function NoticePane({ tax }: { tax: number }) {
     ["Locked means locked", "While a lock stands you cannot withdraw or transfer. That is what the multiplier is paying for."],
     ["Rewards are ETH, not more LOYAL", "So staking does not dilute you, and the share price never moves — one stLOYAL is one LOYAL, always."],
     ["Burning is a one-way door", "Redeeming destroys your LOYAL at the moment you ask, not when you collect. There is no cancel and no re-mint."],
-    ["The reserve is not a guarantee", "The figure shows what is held right now, not a level the contract can hold. Every movement is logged on chain."],
     ["Not a bank, a fund, or advice", "It is a tax, a pot, and a queue — all three readable from the chain."],
   ];
 
@@ -198,7 +215,7 @@ export function NoticePane({ tax }: { tax: number }) {
    ========================================================================== */
 export function SysPane({ snap, tax }: { snap: Snapshot | null; tax: number }) {
   const rows: [string, React.ReactNode][] = [
-    ["System", <span key="s" className="text-bone">LOYAL // reserve OS</span>],
+    ["System", <span key="s" className="text-bone">LOYAL // loyalty OS</span>],
     ["Chain", `Robinhood Chain · ${CHAIN_ID}`],
     ["Block", snap?.block != null ? String(snap.block) : DASH],
     ["Launchpad", "Pons bonding curve"],

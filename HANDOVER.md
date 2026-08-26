@@ -246,6 +246,59 @@ proposal itself is reversible — only the execute is not.
 Until it lands, creator tax accrues on the curve and only the EOA can sweep it
 (~0.00024 ETH sitting there at the time of writing).
 
+### Verification — all five, on Blockscout
+
+```
+✓ Treasury     ✓ FeeSink     ✓ StakedLoyal     ✓ Redeemer     ✓ Distributor
+   all v0.8.24+commit.e11b9ed9, optimizer on, 200 runs
+```
+
+`npx hardhat verify --network robinhood <address> <ctor args…>`. The config in
+`hardhat.config.ts` matches Blockscout's own guide — `apiURL` ending in `/api`,
+`sourcify` disabled, any non-empty `apiKey`.
+
+**Two hosts, and the difference is not documented anywhere.**
+
+| | `robinhoodchain.blockscout.com/api` | `api.blockscout.com/4663/api` |
+|---|---|---|
+| auth | none, and a key changes nothing | dev.blockscout.com key, 402 without |
+| limit | **10 requests**, ~10 min window | ~5/sec |
+| big payloads | fine | **500s above ~250 KB** |
+| status poll | `Unknown UID` — reports failure for submissions it accepted | works |
+
+So: route through the **proxy** by default (`BLOCKSCOUT_API_KEY` in `.env`
+switches `apiURL` automatically), but `StakedLoyal` has to go **direct** —
+its standard-JSON input is 251 KB across 32 sources and the proxy returns
+`{"error":"Internal server error","source":"internal"}` every time. Run that one
+with `BLOCKSCOUT_API_KEY= npx hardhat verify …` to fall back.
+
+Re-verification, copy-paste (constructor args in the order each takes them):
+
+```bash
+cd contracts
+npx hardhat verify --network robinhood 0x87ED7A77894Ed43d15987d6A2ECd3Ad41455Cf0C \
+  0x16E7C1B229d5701e75Cccb68C13fcbf98FE5c027
+npx hardhat verify --network robinhood 0x7A17e812Aa7470fAEB99BfaA0408487CE849ed8D \
+  0x87ED7A77894Ed43d15987d6A2ECd3Ad41455Cf0C 0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e 0x16E7C1B229d5701e75Cccb68C13fcbf98FE5c027
+npx hardhat verify --network robinhood 0x729796Aefc26f7820B7FB761DE5A373763E803d0 \
+  0x1B7f9c45DfF56d8b4309f01afb4763d9C595318e 0x87ED7A77894Ed43d15987d6A2ECd3Ad41455Cf0C 0x16E7C1B229d5701e75Cccb68C13fcbf98FE5c027
+npx hardhat verify --network robinhood 0x3d0445B9c9CF3E1f539290084c6FC22E15C84f61 \
+  0x8280762BD502abFaC909db9202604C4422703596
+# StakedLoyal — 251 KB, must bypass the proxy:
+BLOCKSCOUT_API_KEY= npx hardhat verify --network robinhood 0x8280762BD502abFaC909db9202604C4422703596 \
+  0x1B7f9c45DfF56d8b4309f01afb4763d9C595318e 0x16E7C1B229d5701e75Cccb68C13fcbf98FE5c027
+```
+
+Two traps that cost an hour:
+
+- The instance's `Unknown UID` means **a "failed" verification may have
+  succeeded**. Treasury was verified the whole time the plugin was reporting it
+  as failed. Always confirm against
+  `/api/v2/smart-contracts/<address>` (quota 180, not 10) rather than trusting
+  the plugin's verdict.
+- That read endpoint throws transient 500s, and a naive check treats the error
+  string as "not verified". Retry before believing it.
+
 ### Why deploy.ts / launch.ts / bind.ts were not used
 
 They assume the token does not exist yet — their whole point was launching with
@@ -310,16 +363,61 @@ write path (`deposit` + `lock`) using `wallet.getSigner()`; the ABI in
 
 ---
 
+## 6b. The crank, and the keeper
+
+**Nothing in this protocol moves money on a schedule.** Fees accrue in the Pons
+escrow and sit there; stakers see a claimable balance of zero until three
+transactions are sent. All three are permissionless — no privileged caller, no
+way to redirect where the money lands:
+
+```
+FeeSink.collect()             escrow + curve → Treasury, split on arrival
+Treasury.distributeIncome()   the stakers' earmark → the vault (notifyReward)
+Treasury.claimTeam()          the team's earmark → teamRecipient
+```
+
+Order matters: 2 and 3 revert `NoIncome` / `NoTeamRevenue` until 1 has run.
+`scripts/crank.ts` runs all three once, reading state before and after each.
+
+`scripts/keeper.ts` runs them on a loop. Thresholds (`KEEPER_MIN_COLLECT`,
+`KEEPER_MIN_TEAM`) exist because gas costs the same whether a call moves 10 ETH
+or 10 wei, and an uncollected fee is not an expiring one. It never exits on a
+bad tick — a keeper that dies on the first RPC hiccup is worse than none,
+because you stop watching it.
+
+Run by hand, in a terminal left open — deliberately not installed as a service.
+It is watched rather than forgotten:
+
+```bash
+cd contracts
+npx hardhat run scripts/keeper.ts --network robinhood   # loops, Ctrl+C to stop
+KEEPER_ONCE=1 npx hardhat run scripts/keeper.ts --network robinhood   # one tick
+```
+
+**The curve leg lags one crank.** `collect()` claims the escrow *before*
+sweeping the curve, and `sweepFees` pushes the curve's tax **into the escrow**
+rather than to the sink — so whatever was on the curve is collected by the
+*next* call. Nothing is lost; it is one interval late. Worth knowing before
+someone reads it as a shortfall.
+
+**The keeper is close to self-funding.** `teamRecipient` is the same EOA that
+pays the gas, so team revenue returns to the wallet the keeper spends from. It
+still needs watching — `KEEPER_MIN_GAS` makes it refuse to act and say so
+rather than retrying into an empty wallet.
+
 ## 7. Open items
 
 1. **Move the fee recipient** (§5) — decided to wait. Nothing accrues to the
    Treasury until it happens.
-2. **The frontend still describes a floor that cannot exist.** `Live.tsx` has a
-   "Share to stakers" row noting *"the rest compounds into the floor"* — it now
-   goes to the team — and a "Floor per token" row that will render a live `0`.
-   The risks list on `/` leads with "The floor is not guaranteed", which
-   undersells it: there is no floor. `chain.ts` is wired, so the page reads
-   these for real now. Left alone on request.
+2. **The windowed shell no longer claims a floor** — the Reserve and
+   Floor-per-token rows are gone (both were correct, live and permanently zero,
+   which teaches a reader that nothing on the page means anything), the
+   "reserve is not a guarantee" risk line is gone, `reserve.sys` is now
+   `chain.sys`, and the masthead no longer says the tax funds "a shared
+   reserve". **The old `/stake` route still does**: it renders `Live.tsx`,
+   which keeps a "Floor per token" row and a "Share to stakers" note claiming
+   *"the rest compounds into the floor"*. Either fix those two or drop the
+   route — the shell has replaced it.
 3. **Strip the sleeve from Treasury?** (§3) — their call, still open. Note
    `withdraw()` can no longer reach staker or team money regardless.
 4. **`transferOwnership()` to a multisig** — one EOA currently holds every

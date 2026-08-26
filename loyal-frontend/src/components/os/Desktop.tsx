@@ -73,7 +73,10 @@ const WINDOWS: Def[] = [
   // a picture — squeezing it costs the comparison the whole pane exists to make.
   { id: "commit", index: "0x02", title: "commit.exe", icon: "commit", width: 640, maxH: 780, home: { x: 532, y: 12 } },
   { id: "position", index: "0x06", title: "position", icon: "position", width: 500, maxH: 660, home: { x: 300, y: 60 } },
-  { id: "reserve", index: "0x03", title: "reserve.sys", icon: "reserve", width: 520, maxH: 480, home: { x: 92, y: 300 } },
+  // Titled for what it shows. It was `reserve.sys` while it reported a reserve;
+  // with the corpus permanently empty those rows are gone and what is left is
+  // market and vault state, so the name follows the content.
+  { id: "reserve", index: "0x03", title: "chain.sys", icon: "reserve", width: 520, maxH: 480, home: { x: 92, y: 300 } },
   { id: "notice", index: "0x04", title: "notice.txt", icon: "notice", width: 480, maxH: 440, home: { x: 420, y: 210 }, accent: "magenta" },
   { id: "sys", index: "0x05", title: "system", icon: "sys", width: 520, maxH: 560, home: { x: 250, y: 130 } },
 ];
@@ -129,7 +132,7 @@ export function Desktop() {
     switch (id) {
       case "def": return <DefPane tax={tax} />;
       case "commit": return <CommitPane wallet={w} pos={pos} tx={tx} />;
-      case "position": return <PositionPane wallet={w} pos={pos} tx={tx} />;
+      case "position": return <PositionPane wallet={w} pos={pos} tx={tx} supply={snap?.token.totalSupply ?? null} />;
       case "reserve": return <ReservePane snap={snap} error={error} />;
       case "notice": return <NoticePane tax={tax} />;
       case "sys": return <SysPane snap={snap} tax={tax} />;
@@ -147,7 +150,7 @@ export function Desktop() {
           <span className="text-[12px] font-bold tracking-[0.32em] text-bone">LOYAL</span>
         </div>
         <span className="hidden h-3.5 w-px bg-edge sm:block" />
-        <span className="hidden text-[9px] uppercase tracking-[0.26em] text-ash/60 sm:block">reserve OS</span>
+        <span className="hidden text-[9px] uppercase tracking-[0.26em] text-ash/60 sm:block">loyalty OS</span>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden items-center gap-2 border border-edge px-2.5 py-1 text-[9px] uppercase tracking-[0.18em] text-ash md:flex">

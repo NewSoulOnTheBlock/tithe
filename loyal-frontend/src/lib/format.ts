@@ -111,6 +111,30 @@ export function fmtDateTime(unix: number | null | undefined): string {
   });
 }
 
+/**
+ * A token amount as a share of supply.
+ *
+ * "10.00M LOYAL" is a number most people cannot place — a million is large or
+ * trivial depending entirely on what the supply is, and nobody carries
+ * 1,000,000,000 in their head while reading a dashboard. The percentage is the
+ * part that actually means something.
+ *
+ * Computed in bigint to four decimal places of a percent before touching
+ * `Number`, because `Number(1e27) / Number(1e28)` loses precision long before
+ * the answer does. Returns `null` when either side is unread — a share of an
+ * unknown supply is not zero, it is unknown.
+ */
+export function pctOfSupply(part: bigint | null | undefined, whole: bigint | null | undefined): string | null {
+  if (part === null || part === undefined || whole === null || whole === undefined || whole === 0n) {
+    return null;
+  }
+  const p = Number((part * 1_000_000n) / whole) / 10_000;
+  if (p === 0) return "0%";
+  // Below a hundredth of a percent, the digits are noise — say so instead.
+  if (p < 0.01) return "<0.01%";
+  return `${p.toFixed(p < 10 ? 2 : 1)}%`;
+}
+
 /** Seconds → the largest sensible unit. Used for lock countdowns. */
 export function fmtDuration(seconds: number): string {
   if (seconds <= 0) return "expired";

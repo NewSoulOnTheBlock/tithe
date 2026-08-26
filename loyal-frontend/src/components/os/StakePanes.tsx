@@ -6,7 +6,7 @@ import { LOYAL, TIERS, tierByIndex, type TierKey, isLive, explorerTx } from "@/l
 import { ST_LOYAL_DECIMALS } from "@/lib/chain";
 import { VAULT_ABI, ERC20_ABI, type Position } from "@/lib/account";
 import { writable, type TxRunner } from "@/lib/tx";
-import { fmtGrouped, fmtSig, fmtDuration, fmtDateTime, DASH } from "@/lib/format";
+import { fmtGrouped, fmtSig, fmtDuration, fmtDateTime, pctOfSupply, DASH } from "@/lib/format";
 import { useNow } from "@/lib/clock";
 import type { Wallet } from "@/lib/wallet";
 import { cn } from "@/lib/utils";
@@ -400,10 +400,13 @@ export function PositionPane({
   wallet,
   pos,
   tx,
+  supply,
 }: {
   wallet: Wallet;
   pos: Position;
   tx: TxRunner;
+  /** Total LOYAL supply, for expressing a stake as a share of it. */
+  supply: bigint | null;
 }) {
   const [amount, setAmount] = useState("");
   // Ticks every second so the countdown moves; 0 until mounted so the server
@@ -471,6 +474,7 @@ export function PositionPane({
           label="Staked"
           value={staked !== null ? fmtGrouped(staked, 2, 18) : null}
           unit="LOYAL"
+          pct={pctOfSupply(staked, supply)}
         />
         <Cell
           label="Your multiplier"
@@ -642,12 +646,15 @@ function Cell({
   label,
   value,
   unit,
+  pct,
   note,
   accent,
 }: {
   label: string;
   value: string | null;
   unit?: string;
+  /** Rendered in parentheses after the unit, e.g. a share of supply. */
+  pct?: string | null;
   note?: string;
   accent?: "cyan";
 }) {
@@ -663,6 +670,9 @@ function Cell({
         {value ?? "unavailable"}
         {value !== null && unit && (
           <span className="ml-1 text-[9px] font-normal uppercase tracking-[0.16em] text-ash">{unit}</span>
+        )}
+        {value !== null && pct && (
+          <span className="ml-1.5 text-[10px] font-normal text-ash/70">({pct})</span>
         )}
       </p>
       {note && <p className="mt-0.5 truncate text-[10px] text-ash/50">{note}</p>}
