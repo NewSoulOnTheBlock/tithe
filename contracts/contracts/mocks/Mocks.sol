@@ -231,3 +231,47 @@ contract MockGate {
         return allowed[account];
     }
 }
+
+
+/**
+ * A team recipient that tries to re-enter `claimTeam()` from its ETH callback.
+ *
+ * Two things are supposed to stop it, and the test asserts the outcome rather
+ * than which one fired: `pendingTeam` is zeroed before the transfer, so a
+ * re-entry finds nothing to take, and `nonReentrant` refuses the call anyway.
+ */
+interface ITreasuryTeam {
+    function claimTeam() external returns (uint256);
+}
+
+contract ReentrantTeam {
+    ITreasuryTeam public immutable treasury;
+    uint256 public reenteredTimes;
+    uint256 public received;
+    bool private attacking;
+
+    constructor(address treasury_) {
+        treasury = ITreasuryTeam(treasury_);
+    }
+
+    function attack() external {
+        attacking = true;
+        treasury.claimTeam();
+        attacking = false;
+    }
+
+    receive() external payable {
+        received += msg.value;
+        if (!attacking) return;
+        try treasury.claimTeam() {
+            reenteredTimes++;
+        } catch {}
+    }
+}
+
+
+/// @dev Refuses ETH outright. Stands in for a team wallet that is a contract
+///      with no payable path — the case that must not be able to brick `fund()`.
+contract EthRejecter {
+    // No receive, no fallback: every plain transfer to this address reverts.
+}

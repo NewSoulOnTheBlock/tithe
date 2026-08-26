@@ -51,11 +51,18 @@ export const LOYAL = {
   /** `token.deployer()`. */
   deployer: "0x16E7C1B229d5701e75Cccb68C13fcbf98FE5c027",
 
-  treasury: ZERO,
-  feeSink: ZERO,
-  stakedLoyal: ZERO,
-  redeemer: ZERO,
-  distributor: ZERO,
+  /**
+   * The reserve stack, deployed to 4663 and verified by reading each binding
+   * back off the chain — not copied from a deploy log.
+   */
+  treasury: "0x87ED7A77894Ed43d15987d6A2ECd3Ad41455Cf0C",
+  /** `curve()` bound and owner renounced in the same transaction. */
+  feeSink: "0x7A17e812Aa7470fAEB99BfaA0408487CE849ed8D",
+  /** stLOYAL — 21 decimals, see ST_LOYAL_DECIMALS below. */
+  stakedLoyal: "0x8280762BD502abFaC909db9202604C4422703596",
+  redeemer: "0x729796Aefc26f7820B7FB761DE5A373763E803d0",
+  /** No owner, no split: 100% of income reaches stLOYAL. */
+  distributor: "0x3d0445B9c9CF3E1f539290084c6FC22E15C84f61",
 } as const;
 
 export const isLive = (addr: string) => !!addr && addr !== ZERO;

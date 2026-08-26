@@ -164,24 +164,66 @@ contract Treasury is Ownable, ReentrancyGuard {
     uint256 public pendingIncome;
 
     /**
-     * @notice Share of incoming TAX treated as income rather than corpus, in bps.
-     * @dev **Defaults to 0, which is the specified behaviour**: spec §9 says only
-     *      *realized* surplus is distributable and tax belongs to the corpus.
+     * @notice Share of incoming TAX earmarked for stakers rather than corpus, in bps.
+     * @dev Originally 0, because spec §9 said tax is corpus and only *realized*
+     *      surplus is distributable. Removing the yield sleeve removed the only
+     *      thing that realized surplus, so leaving this at 0 would mean stakers
+     *      earn nothing at all — the tiers would divide zero forever.
      *
-     *      The lever exists because that specification has a consequence worth
-     *      being deliberate about — with no yield adapter deployed there is no
-     *      yield, so stakers earn exactly nothing until one
-     *      exists. Turning this above zero pays them out of trade tax instead,
-     *      at the cost of slowing the floor. That is an economic decision, so it
-     *      is left off until someone actively makes it.
+     *      The cap is 7500 so the intended 1.5%-of-a-2%-tax split is reachable
+     *      exactly. It is deliberately not 10000: `teamShareBps` has to fit
+     *      alongside it, and a single dial able to consume the entire tax is a
+     *      sharper instrument than this needs.
      */
     uint16 public incomeShareBps;
 
-    /// @notice Cap on `incomeShareBps`, so the floor can never be starved.
-    uint16 public constant MAX_INCOME_SHARE_BPS = 5_000;
+    /// @notice Cap on `incomeShareBps`. See `MAX_TEAM_SHARE_BPS` — they sum to 100%.
+    uint16 public constant MAX_INCOME_SHARE_BPS = 7_500;
 
     /// @notice Cumulative ETH sent onward to the Distributor.
     uint256 public cumulativeIncomeDistributed;
+
+    // -----------------------------------------------------------------------
+    // Team revenue
+    // -----------------------------------------------------------------------
+
+    /**
+     * @notice Share of incoming TAX earmarked for `teamRecipient`, in bps.
+     * @dev This exists so team revenue is a **declared line item** rather than
+     *      an owner reaching into the corpus.
+     *
+     *      It could have been done with `withdraw()`: let the cut land in the
+     *      corpus and have the operator take it out. That is worse in a way
+     *      that shows. Corpus ETH is what `floorPerToken()` is computed from,
+     *      so every payday would spike the floor and then drop it — firing
+     *      `FloorRegression` on schedule and making the floor chart a sawtooth
+     *      driven by payroll. Worse, anyone redeeming in the window between
+     *      would be quoted a floor partly backed by money already spoken for.
+     *
+     *      Earmarking at the moment of inflow avoids all of it: the team's cut
+     *      is never corpus, never counted in `nav()`, and never redeemable —
+     *      so the floor only ever moves for reasons a holder can explain.
+     */
+    uint16 public teamShareBps;
+
+    /// @notice Cap on `teamShareBps`. 2500 of a 2% tax is 0.5% of a trade, and
+    ///         no owner can ever raise the team's take above that.
+    uint16 public constant MAX_TEAM_SHARE_BPS = 2_500;
+
+    /// @notice The only address `claimTeam()` can pay.
+    address public teamRecipient;
+
+    /**
+     * @notice Team revenue accrued and not yet claimed.
+     * @dev Excluded from `liquidEth()` for the same reason as `pendingIncome`:
+     *      it is owed to a third party and is not corpus. Held rather than
+     *      pushed so that `fund()` — the hot path every fee collection runs
+     *      through — cannot be made to revert by a recipient that rejects ETH.
+     */
+    uint256 public pendingTeam;
+
+    /// @notice Cumulative ETH paid out to `teamRecipient`.
+    uint256 public cumulativeTeamPaid;
 
     /**
      * @notice The ONLY address treasury ETH can be withdrawn to.
@@ -240,6 +282,10 @@ contract Treasury is Ownable, ReentrancyGuard {
     /// @dev navAfter is logged so the corpus is auditable from events alone.
     event Withdrawn(address indexed to, uint256 amount, uint256 navAfter);
     event IncomeShareBpsSet(uint16 previous, uint16 current);
+    event TeamShareBpsSet(uint16 previous, uint16 current);
+    event TeamRecipientSet(address indexed previous, address indexed current);
+    event TeamAccrued(uint256 amount, uint256 pendingTeam);
+    event TeamPaid(address indexed to, uint256 amount);
     event FeeSinkSet(address indexed previous, address indexed current);
     event RedeemerSet(address indexed previous, address indexed current);
     event SleeveBpsSet(uint16 previous, uint16 current);
@@ -275,6 +321,9 @@ contract Treasury is Ownable, ReentrancyGuard {
     error OperatorNotSet();
     error NoIncome();
     error IncomeShareTooLarge(uint16 requested, uint16 max);
+    error TeamShareTooLarge(uint16 requested, uint16 max);
+    error TeamRecipientNotSet();
+    error NoTeamRevenue();
 
     // -----------------------------------------------------------------------
     // Construction
@@ -320,10 +369,17 @@ contract Treasury is Ownable, ReentrancyGuard {
     // NAV accounting (spec §6)
     // -----------------------------------------------------------------------
 
-    /// @notice Liquid corpus ETH — the balance minus anything owed to stakers.
+    /**
+     * @notice Liquid corpus ETH — the balance minus everything owed to others.
+     * @dev Both `pendingIncome` (stakers) and `pendingTeam` (team revenue) are
+     *      liabilities sitting in this contract's balance. Corpus is what is
+     *      left after them, and it is corpus alone that `nav()`, the floor,
+     *      redemptions and `withdraw()` are allowed to see.
+     */
     function liquidEth() public view returns (uint256) {
         uint256 bal = address(this).balance;
-        return bal > pendingIncome ? bal - pendingIncome : 0;
+        uint256 owed = pendingIncome + pendingTeam;
+        return bal > owed ? bal - owed : 0;
     }
 
     /// @notice Liquid ETH held directly, available for redemption immediately.
@@ -524,6 +580,19 @@ contract Treasury is Ownable, ReentrancyGuard {
                     emit IncomeAccrued(toIncome, pendingIncome);
                 }
             }
+
+            // The team's cut is only taken if there is somewhere to send it.
+            // Earmarking against an unset recipient would strand the ETH in a
+            // liability no one can claim — outside the corpus, so it would not
+            // back the floor, and outside `pendingIncome`, so stakers could not
+            // have it either. Better it stays corpus until the address exists.
+            if (teamShareBps != 0 && teamRecipient != address(0)) {
+                uint256 toTeam = (msg.value * teamShareBps) / BPS;
+                if (toTeam != 0) {
+                    pendingTeam += toTeam;
+                    emit TeamAccrued(toTeam, pendingTeam);
+                }
+            }
         } else {
             cumulativeDonated += msg.value;
         }
@@ -558,6 +627,36 @@ contract Treasury is Ownable, ReentrancyGuard {
         IDistributor(distributor).distribute{value: amount}();
 
         emit IncomeDistributed(amount);
+        _touch();
+    }
+
+    /**
+     * @notice Pay accrued team revenue to `teamRecipient`. Permissionless.
+     * @dev Permissionless because it has exactly one destination and no
+     *      discretion: whoever calls it, the money goes to `teamRecipient` and
+     *      nowhere else. Gating it behind the owner would add a key to the
+     *      trust surface without adding a decision for that key to make.
+     *
+     *      Nothing here can touch corpus. `pendingTeam` only ever grows by the
+     *      declared share of an actual tax inflow, so this cannot pay out more
+     *      than the team was earmarked, and the floor is unaffected either way
+     *      because the earmarked ETH was never in `nav()` to begin with.
+     */
+    function claimTeam() external nonReentrant returns (uint256 amount) {
+        address to = teamRecipient;
+        if (to == address(0)) revert TeamRecipientNotSet();
+
+        amount = pendingTeam;
+        if (amount == 0) revert NoTeamRevenue();
+        if (amount > address(this).balance) revert InsufficientLiquidEth(amount, address(this).balance);
+
+        pendingTeam = 0;
+        cumulativeTeamPaid += amount;
+
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert EthTransferFailed();
+
+        emit TeamPaid(to, amount);
         _touch();
     }
 
@@ -688,6 +787,31 @@ contract Treasury is Ownable, ReentrancyGuard {
         if (bps > MAX_INCOME_SHARE_BPS) revert IncomeShareTooLarge(bps, MAX_INCOME_SHARE_BPS);
         emit IncomeShareBpsSet(incomeShareBps, bps);
         incomeShareBps = bps;
+    }
+
+    /**
+     * @notice Set the team's share of incoming tax.
+     * @dev Capped at `MAX_TEAM_SHARE_BPS` in the contract, not by policy, so
+     *      "the team can never take more than 0.5% of a trade" is a fact a
+     *      holder can verify rather than a promise they have to accept.
+     */
+    function setTeamShareBps(uint16 bps) external onlyOwner {
+        if (bps > MAX_TEAM_SHARE_BPS) revert TeamShareTooLarge(bps, MAX_TEAM_SHARE_BPS);
+        emit TeamShareBpsSet(teamShareBps, bps);
+        teamShareBps = bps;
+    }
+
+    /**
+     * @notice Set the single address team revenue can be paid to.
+     * @dev Re-pointable, unlike `loyal` — the team's payout address is an
+     *      operational detail that may legitimately need to change, and it can
+     *      only ever redirect the team's own declared share. It cannot reach
+     *      corpus, staker income, or anything already claimed.
+     */
+    function setTeamRecipient(address to) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        emit TeamRecipientSet(teamRecipient, to);
+        teamRecipient = to;
     }
 
     function setSleeveBps(uint16 sleeveBps_) external onlyOwner {

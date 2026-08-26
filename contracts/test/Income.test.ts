@@ -84,12 +84,28 @@ describe("Income route: Treasury → Distributor → stakers", () => {
       expect(await treasury.nav()).to.equal(ethers.parseEther("100"));
     });
 
-    it("caps the tax share so the floor cannot be starved", async () => {
-      await expect(treasury.setIncomeShareBps(5001)).to.be.revertedWithCustomError(
+    // The cap moved from 5000 to 7500 when the team split landed. It is no
+    // longer "the floor cannot be starved" — with 7500 to stakers and 2500 to
+    // the team the corpus genuinely receives nothing, which is the configured
+    // economics. What the cap still guarantees is that no SINGLE dial can take
+    // the whole tax: the two shares are bounded separately and sum to exactly
+    // 100%, so neither side can be turned up at the other's expense.
+    it("caps each share separately, and they sum to exactly the whole tax", async () => {
+      const income = Number(await treasury.MAX_INCOME_SHARE_BPS());
+      const team = Number(await treasury.MAX_TEAM_SHARE_BPS());
+      expect(income + team).to.equal(10_000);
+
+      await expect(treasury.setIncomeShareBps(income + 1)).to.be.revertedWithCustomError(
         treasury,
         "IncomeShareTooLarge"
       );
-      await expect(treasury.setIncomeShareBps(5000)).to.not.be.reverted;
+      await expect(treasury.setIncomeShareBps(income)).to.not.be.reverted;
+
+      await expect(treasury.setTeamShareBps(team + 1)).to.be.revertedWithCustomError(
+        treasury,
+        "TeamShareTooLarge"
+      );
+      await expect(treasury.setTeamShareBps(team)).to.not.be.reverted;
     });
   });
 
